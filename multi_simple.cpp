@@ -24,13 +24,6 @@
 
 namespace po = boost::program_options;
 
-static bool re_compare(std::complex<float> a, std::complex<float> b)
-{
-  return (a.real() < b.real());
-}
-
-
-
 
 void generate_freq_domain_signal(unsigned int spb, std::vector<unsigned int> bin, std::vector<float> mag, std::vector<std::complex<float> > &time_buff)
 {
