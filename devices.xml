@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<devices>
+
+  <active sync="now">
+    <device type="n210" ip="192.168.10.2">
+      <ch rx_freq="900e6" rx_rate="5e6" rx_gain="0"
+	  tx_freq="1200e6" tx_rate="5e6" tx_gain="0"/>
+    </device>
+
+  </active>
+
+  <activetx sync="now">
+    <device type="n210" ip="192.168.20.2">
+      <ch rx_freq="900e6" rx_rate="5e6" rx_gain="0"
+	  tx_freq="900e6" tx_rate="5e6" tx_gain="0"/>
+    </device>
+  </activetx>
+
+  <reserve>
+    <device type="n210" ip="192.168.10.2" sync="now">
+      <ch rx_freq="900e6" rx_rate="5e6" rx_gain="10" tx_freq="1200e6" />
+    </device>
+  <reserve>
+
+</devices>
