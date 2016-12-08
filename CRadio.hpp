@@ -78,7 +78,7 @@ class CRadio
     bool is_RxStreaming()  {return _is_RxStreaming; }
 
     double get_rx_freq()   { return _rxfreq; }
-    double get_rx_rate()   { return _rxrate; }
+    double get_rx_rate(unsigned int ch)   { return _usrp->get_rx_rate( ch ) ; }
     double get_rx_gain()   { return _rxgain; }
     std::string get_rx_ant() { return _rxant; }
 
@@ -411,7 +411,7 @@ void CRadio::run_rx(DeviceStorageType& rx_mdst, double seconds_in_future, size_t
     else if (_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE){
       throw std::runtime_error(str(boost::format("Recv'd samples %i\nReceiver error %s") % num_acc_samps % _md.strerror()));
     }
-    int verbose = 1;
+    int verbose = 0;
     if(verbose) std::cout << boost::format(
 					   "Received packet: %u samples, %u full secs, %f frac secs"
 					   ) % num_rx_samps % _md.time_spec.get_full_secs() % _md.time_spec.get_frac_secs() << std::endl;
@@ -615,7 +615,7 @@ void CRadio::_run_tx(DeviceStorageType& tx_mdst)
     }
     
     // Comment line below to keep sending sequence
-    //tx_mdst.head = 0;
+    tx_mdst.head = 0;
 
   } // while()
 
