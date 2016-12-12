@@ -206,8 +206,10 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 
 
     CRadio usrp1;
-    usrp1.make_device_handle(xml_file, xml_path);
-
+    if (usrp1.make_device_handle(xml_file, xml_path) == RETURN_ERROR) {
+      std::cerr << "unable to make device" << std::endl;
+      return 0;
+    }
     if (vm.count("print-conf")){
       usrp1.print_radio_configurations();
       return 0;
@@ -224,15 +226,16 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       DBG_OUT( usrp1.spb() );
 
       usrp1.init_rx();
-      unsigned int N_SPB_BUFFS = 64;
+      unsigned int N_SPB_BUFFS = 32;
 
       DeviceStorageType rx_mdst(usrp1.nRxChannels(), usrp1.spb(), N_SPB_BUFFS); // this should go on the heap
-      
-      //.run_rx( rx_mdst );  // non-blocking call spawns a receive thread
+      DBG_OUT(rx_mdst._MultiDeviceBuffer.size() );
+      //run_rx( rx_mdst );  // non-blocking call spawns a receive thread
 
       unsigned int ch = 0;
       total_num_samps = usrp1.spb() * N_SPB_BUFFS;
       usrp1.run_rx( rx_mdst, seconds_in_future, total_num_samps);
+
       DBG_OUT(rx_mdst.head);
       DBG_OUT(total_num_samps);
 
@@ -277,41 +280,14 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       DeviceStorageType tx_mdst(usrp1.nTxChannels(), usrp1.spb(), N_SPB_BUFFS); // this should go on the heap
 
 
-#if 0
-      int my_i[]   = {10, 20, 30, 40, 50, 60, 70, 80}; 
-      float my_m[] = {.1, .1, .1, .1, .1, .1, .1, .1}; 
-      std::vector<unsigned int> bin_vec(my_i, my_i + sizeof(my_i) / sizeof(int) );
-      std::vector<float>        mag_vec(my_m, my_m + sizeof(my_m) / sizeof(float) );
-      multi_tone_1_256(bin_vec, mag_vec, signal);
-
-      // populate tx_mdst buffer with signal
-      unsigned int ch = 0;
-      //memcpy((void*)tx_mdst._MultiDeviceBuffer.at(ch).data(), (void*)signal.data(), usrp1.spb() * sizeof(std::complex<float>) );
-      unsigned int idx = 0;
-      memcpy((void*)tx_mdst._MultiDeviceBufferPtrs.at(idx).at(ch), (void*)signal.data(), usrp1.spb() * sizeof(std::complex<float>) );
-      tx_mdst.head++;
-#endif
-
       usrp1.run_tx( tx_mdst );  // non-blocking call spawns a transmit thread thread
-      int offs = 0;
-      int bin1 = 0;
-      int bin2 = 64;
       boost::system_time next_update = boost::get_system_time();
 
       while( !local_kill_switch ) { 
 	if (tx_mdst.head != 0) continue;
 
 	// do stuff here...                            time this part!!!
-	//single_tone_1_256( bin1, 0.1, signal1 );
-	//single_tone_1_256     ( bin2, 0.1, signal2 );
-
-
-
-	multi_tone_1_256_b1_b2(bin1, bin1+10, signal.at(0));
-	multi_tone_1_256_b1_b2(bin1+25, bin1+35, signal.at(1));
-
-	//multi_tone_1_256_b1_b2(bin1+30, bin1+40, signal.at(2));
-	//multi_tone_1_256_b1_b2(bin1+45, bin1+55, signal.at(3));
+	single_tone_1_256( 32, 0.1, signal.at(0) );
 
 	// copy signal to tx_mdst buffers for sending 
 	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
@@ -325,13 +301,6 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	tx_mdst.head = N_SPB_BUFFS; // kick off sending
 
 
-	// background updates
-	if (boost::get_system_time() < next_update) continue;
-	next_update = boost::get_system_time() + boost::posix_time::microseconds(long(0.5e6));
-	bin1++;
-	bin1 = bin1 % usrp1.spb();
-	bin2++;
-	bin2 = bin2 % usrp1.spb();
       }
       usrp1.stop_tx();
       tx_mdst.head = tx_mdst.tail = 0;

@@ -13,6 +13,8 @@
 #include "DeviceStorage.h"
 
 #define DBG_OUT(x) std::cerr << #x << " = " << x << std::endl
+#define RETURN_SUCCESS 0
+#define RETURN_ERROR    -1
 
 struct __s_tuner_conf {
   double freq;
@@ -57,7 +59,7 @@ class CRadio
 
   public:
     CRadio();
-    void make_device_handle(std::string XML_FILE_PATH, std::string xml_path_conf);
+    int make_device_handle(std::string XML_FILE_PATH, std::string xml_path_conf);
     void init_rx();
     void init_tx();
 
@@ -96,7 +98,7 @@ CRadio::CRadio()
   _spb = 256;
 }
 
-void CRadio::make_device_handle(std::string XML_FILE_PATH, std::string xml_path_conf)
+int CRadio::make_device_handle(std::string XML_FILE_PATH, std::string xml_path_conf)
 {
   // get config from XML file
   pugi::xml_document doc;
@@ -107,7 +109,7 @@ void CRadio::make_device_handle(std::string XML_FILE_PATH, std::string xml_path_
   pugi::xpath_node xpathNode = root.select_single_node(searchStr.c_str());
   if (!xpathNode) { // if xpath does not exist then bail
     std::cout << searchStr << " not exist\n";
-    exit;
+    return RETURN_ERROR;
   }
 
   pugi::xml_node pugiNode = xpathNode.node();
@@ -146,9 +148,13 @@ void CRadio::make_device_handle(std::string XML_FILE_PATH, std::string xml_path_
 
   _nRadiosInConfig = _radio_configs.size();
 
-  for (int i = 0 ; i < _radio_configs.size(); i++)
-    _devargs += "addr" + boost::lexical_cast<std::string>(i) + "=" + _radio_configs.at(i).ip + ",";
-  
+  for (int i = 0 ; i < _radio_configs.size(); i++) {
+    if (_radio_configs.at(i).type == "b200")
+      _devargs += "type" + boost::lexical_cast<std::string>(i) + "=" + _radio_configs.at(i).type + ",";
+    else
+      _devargs += "addr" + boost::lexical_cast<std::string>(i) + "=" + _radio_configs.at(i).ip + ",";
+  }
+
   std::cout << boost::format("Creating the usrp device: %s") % _devargs << std::endl;
   _usrp = uhd::usrp::multi_usrp::make(_devargs);
 
@@ -196,6 +202,7 @@ void CRadio::make_device_handle(std::string XML_FILE_PATH, std::string xml_path_
   }
 #endif
 
+  return RETURN_SUCCESS;
 
 }
 
@@ -239,7 +246,7 @@ void CRadio::init_rx()
 
   }
 
-  boost::this_thread::sleep(boost::posix_time::seconds(1)); //allow for some setup time
+  boost::this_thread::sleep(boost::posix_time::seconds(1.0)); //allow for some setup time
 
   for (int i = 0; i < _nRadiosInConfig; i++) {
     struct __s_radio_conf radio_conf = _radio_configs.at(i);
@@ -315,13 +322,7 @@ void CRadio::_run_rx(DeviceStorageType& rx_mdst)
       std::cerr << "!!";
       continue;
     }
-#if 0
-    for(int i = 0; i < rx_mdst._MultiDeviceBuffer.at(0).size(); ++i) {
-      float v = (float)i;
-      rx_mdst._MultiDeviceBuffer.at(0).at(i) = std::complex<float>(v,v);
-      rx_mdst._MultiDeviceBuffer.at(1).at(i) = std::complex<float>(1000+v,1000+v);
-    }
-#endif
+
     //use a small timeout for subsequent packets
     timeout = 0.01;
 
@@ -366,10 +367,8 @@ void CRadio::_run_rx(DeviceStorageType& rx_mdst)
 
 void CRadio::run_rx(DeviceStorageType& rx_mdst, double seconds_in_future, size_t total_num_samps)
 {
-  //allocate buffers to receive with samples (one buffer per channel)
-  rx_mdst.init( (unsigned int)_nRxChannels,
-		(unsigned int)_spb,
-		(unsigned int)ceil((float)total_num_samps / (float)_spb)) ;
+
+  _usrp->set_time_now(uhd::time_spec_t(0.0) );
 
   //_spb = _rx_stream->get_max_num_samps();
 
@@ -386,7 +385,7 @@ void CRadio::run_rx(DeviceStorageType& rx_mdst, double seconds_in_future, size_t
   //setup streaming
   std::cout << std::endl << boost::format("Begin streaming %u samples, %f seconds in the future...") % total_num_samps % seconds_in_future << std::endl;
   uhd::stream_cmd_t stream_cmd(uhd::stream_cmd_t::STREAM_MODE_NUM_SAMPS_AND_DONE);
-  stream_cmd.num_samps = total_num_samps;
+  stream_cmd.num_samps = size_t(total_num_samps);
   stream_cmd.stream_now = false;
   stream_cmd.time_spec = uhd::time_spec_t(seconds_in_future);
   _rx_stream->issue_stream_cmd(stream_cmd); //tells all channels to stream samples to host. This is the GO button.
@@ -400,7 +399,7 @@ void CRadio::run_rx(DeviceStorageType& rx_mdst, double seconds_in_future, size_t
   uhd::rx_metadata_t _md;
   while(num_acc_samps < total_num_samps) {
     //receive multi channel buffers
-    size_t num_rx_samps = _rx_stream->recv( rx_mdst._MultiDeviceBufferPtrs.at(rx_mdst.head++), _spb, _md, timeout);
+    size_t num_rx_samps = _rx_stream->recv( rx_mdst._MultiDeviceBufferPtrs.at(rx_mdst.head), _spb, _md, timeout);
       
     //use a small timeout for subsequent packets
     timeout = 0.1;
@@ -411,17 +410,21 @@ void CRadio::run_rx(DeviceStorageType& rx_mdst, double seconds_in_future, size_t
     else if (_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE){
       throw std::runtime_error(str(boost::format("Recv'd samples %i\nReceiver error %s") % num_acc_samps % _md.strerror()));
     }
-    int verbose = 0;
+    int verbose = 1;
     if(verbose) std::cout << boost::format(
 					   "Received packet: %u samples, %u full secs, %f frac secs"
 					   ) % num_rx_samps % _md.time_spec.get_full_secs() % _md.time_spec.get_frac_secs() << std::endl;
+
+    rx_mdst.head++;
+    rx_mdst.head = rx_mdst.head % rx_mdst.nbuffptrs;
 
     num_acc_samps += num_rx_samps;
   } // while()
 
 
   if (num_acc_samps < total_num_samps)  {
-    std::cerr << "Receive timeout before all samples received..." << std::endl;
+    std::cerr << "Error code: " << _md.strerror() << std::endl;
+    std::cerr << "Receive timeout before all samples received... "  << std::endl;
     return;
   }
 

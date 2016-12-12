@@ -1,13 +1,30 @@
 <?xml version="1.0"?>
 <devices>
 
-  <active sync="now">
-    <device type="n210" ip="192.168.10.2">
-      <ch rx_freq="4000e6" rx_rate="1e6" rx_gain="20" rx_dll_obj=""
+
+  <active_b210 sync="now">
+    <device type="b200" >
+      <ch rx_freq="2000e6" rx_rate="1e6" rx_gain="0" rx_dll_obj=""
+	  tx_freq="900e6" tx_rate="1e6" tx_gain="0" tx_dll_obj=""/>
+      <ch rx_freq="4000e6" rx_rate="1e6" rx_gain="0" rx_dll_obj=""
 	  tx_freq="900e6" tx_rate="1e6" tx_gain="0" tx_dll_obj=""/>
     </device>
+  </active_b210>
 
-  </active>
+  <sb3_rx sync="now">
+    <device type="n210" ip="192.168.10.2">
+      <ch rx_freq="900e6" rx_rate="1e6" rx_gain="20" rx_dll_obj=""
+	  tx_freq="900e6" tx_rate="1e6" tx_gain="0" tx_dll_obj=""/>
+    </device>
+  </sb3_rx>
+
+  <sb3_tx sync="now">
+    <device type="n210" ip="192.168.101.102">
+      <ch rx_freq="900e6" rx_rate="1e6" rx_gain="20" rx_dll_obj=""
+	  tx_freq="900e6" tx_rate="1e6" tx_gain="0" tx_dll_obj=""/>
+    </device>
+  </sb3_tx>
+
 
   <mimo sync="pps">
     <device type="x310" ip="10.10.23.1">
@@ -18,22 +35,15 @@
 	  tx_freq="900e6" tx_rate="1e6" tx_gain="20" tx_dll_obj=""/>
     </device>
 
-    <device type="x310" ip="10.10.23.2">
-      <ch rx_freq="4000e6" rx_rate="1e6" rx_gain="0" rx_dll_obj=""
-	  tx_freq="900e6" tx_rate="1e6" tx_gain="20" tx_dll_obj=""/>
-
-      <ch rx_freq="" rx_rate="1e6" rx_gain="0" rx_dll_obj=""
-	  tx_freq="900e6" tx_rate="1e6" tx_gain="20" tx_dll_obj=""/>
-    </device>
   </mimo>
 
   <mimo_tx sync="now">
     <device type="x310" ip="10.10.23.5">
       <ch rx_freq="4000e6" rx_rate="1e6" rx_gain="0" rx_dll_obj=""
-	  tx_freq="2412e6" tx_rate="5e6" tx_gain="30" tx_dll_obj=""/>
+	  tx_freq="900e6" tx_rate="5e6" tx_gain="30" tx_dll_obj=""/>
 
       <ch rx_freq="3000e6" rx_rate="1e6" rx_gain="0" rx_dll_obj=""
-	  tx_freq="2412e6" tx_rate="5e6" tx_gain="30" tx_dll_obj=""/>
+	  tx_freq="900e6" tx_rate="5e6" tx_gain="30" tx_dll_obj=""/>
     </device>
 
   </mimo_tx>
