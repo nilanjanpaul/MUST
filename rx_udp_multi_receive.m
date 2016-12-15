@@ -36,10 +36,10 @@ if (SELECT == 0)
   plot (real( MultiDeviceBuffer(1,[100:end])  ),'b' ); hold on;
   plot (real( MultiDeviceBuffer(2,[100:end])  ),'r' ); hold off;
 
-  last_idx =  length(MultiDeviceBuffer(1,:));
-  max ( real( MultiDeviceBuffer(1,[100: last_idx])  )  )
-  max ( real( MultiDeviceBuffer(2,[100: last_idx])  )  )
-  sleep(1);
+  %last_idx =  length(MultiDeviceBuffer(1,:));
+  %max ( real( MultiDeviceBuffer(1,[100: last_idx])  )  )
+  %max ( real( MultiDeviceBuffer(2,[100: last_idx])  )  )
+  sleep(.2);
 
 endif
 
