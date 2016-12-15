@@ -21,9 +21,18 @@
 #include "DeviceStorage.h"
 
 #include <signal.h>
+#include "CWriteOml.h"
 
 
 #define DBG_OUT(x) std::cerr << #x << " = " << x << std::endl
+
+#define TEST_FREQ_OFFSET_W_PPS     0
+#define TEST_BAND_AMPLITUDE_W_PPS  1
+
+
+// SELECT ME
+#define TEST_CASE TEST_BAND_AMPLITUDE_W_PPS
+
 
 namespace po = boost::program_options;
 
@@ -114,48 +123,141 @@ void single_tone_1_256(int bin, float magnitude, std::vector<std::complex<float>
 
 }
 
-
-// =========================
-void rx_handler_soemthing_generic(CRadio& usrp1, DeviceStorageType& rx_mdst, unsigned int run_time)
+void rx_handler_find_peaks(CRadio& usrp1, DeviceStorageType& rx_mdst, unsigned int run_time)
 {
   std::vector<float> mag_buff( usrp1.spb() );
   std::vector<std::complex<float> > fft_buff( usrp1.spb());
   assert( fft_buff.size() == usrp1.spb());
 
+  unsigned int total_num_samps = rx_mdst.nsamps_per_ch;
+
+
   boost::system_time next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
   boost::system_time done_time = boost::get_system_time() + boost::posix_time::microseconds(long( run_time*1.0e6) );
   unsigned int ch = 0;
-  while(boost::get_system_time() < done_time) {
+
+
+  while ((!local_kill_switch) && (boost::get_system_time() < done_time)) {
     //boost::this_thread::sleep(boost::posix_time::milliseconds(10));
     if (boost::get_system_time() < next_console_refresh) continue;
-    next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
+    next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(0.5e6));
+    while (rx_mdst.head != 0);
+    
     rx_mdst.print_time();
-    //std::cerr << rx_mdst.head << " " << rx_mdst.tail << std::endl;
-    //usrp1.plot1(rx_mdst, "10.13.0.10", "1337");
+    //DBG_OUT(rx_mdst.head);
+    //DBG_OUT(rx_mdst.tail);
 
+    //std::cerr << rx_mdst.head << " " << rx_mdst.tail << std::endl;
+    //usrp1.plot1(rx_mdst, "10.13.0.10", "1337"); continue;
 
     // find peaks for different channels
+    for (unsigned int ch = 0; ch < usrp1.nRxChannels(); ch++) {
+      std::vector<float> mag_buff( total_num_samps );
+      std::vector<std::complex<float> > fft_buff( total_num_samps );
+      fftwf_plan fft_p = fftwf_plan_dft_1d( total_num_samps,
+					    (fftwf_complex*)&rx_mdst._MultiDeviceBuffer.at( ch ).front(),
+					    (fftwf_complex*)&fft_buff.front(),
+					    FFTW_FORWARD,
+					    FFTW_ESTIMATE);
 
-    fftwf_plan fft_p = fftwf_plan_dft_1d(usrp1.spb(),
-					 (fftwf_complex*)&rx_mdst._MultiDeviceBuffer.at( ch ).front(),
-					 (fftwf_complex*)&fft_buff.front(),
-					 FFTW_FORWARD,
-					 FFTW_ESTIMATE);
+      fftwf_execute(fft_p);
 
-    fftwf_execute(fft_p);
+      // magnitude - ignore frequencies around DC component
+      for(int i = 10; i < total_num_samps-10; i++)
+	mag_buff.at(i) = abs(fft_buff.at(i));
 
-    // magnitude
-    for(int i = 0; i < usrp1.spb(); i++)
-      mag_buff.at(i) = abs(fft_buff.at(i));
 
-    // find max value index                               - asm inline this
-    unsigned int pki = std::distance(mag_buff.begin(),
-				     std::max_element(mag_buff.begin(), mag_buff.end()) );
-    std::cerr << "channel: " << ch << ": " << pki << std::endl;
-    ch++;
-    ch = ch % usrp1.nRxChannels();
+      // find first 15 peaks
+      std::cerr << "channel: " << ch << ": " << std::endl;
+      for (unsigned int i = 0; i < 15 ; ++i)
+      {
+	// find max value index                               - asm inline this
+	unsigned int pki = std::distance(mag_buff.begin(),
+					 std::max_element(mag_buff.begin(), mag_buff.end()) );
+	std::cerr << pki << ": " << mag_buff.at(pki) << ": " << pki* usrp1.rx_rate(ch) / (total_num_samps) <<  std::endl;
 
-  }
+	// now zero out this peak
+	mag_buff.at(pki) = 0.0;
+      }
+
+    } // for loop channels
+
+  } // while
+
+}
+
+// =========================
+void rx_handler_find_peak_write_to_oml(CRadio& usrp1, DeviceStorageType& rx_mdst, unsigned int run_time)
+{
+  std::vector<float> mag_buff( usrp1.spb() );
+  std::vector<std::complex<float> > fft_buff( usrp1.spb());
+  assert( fft_buff.size() == usrp1.spb());
+
+  unsigned int total_num_samps = rx_mdst.nsamps_per_ch;
+
+
+  boost::system_time next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
+  boost::system_time done_time = boost::get_system_time() + boost::posix_time::microseconds(long( run_time*1.0e6) );
+  unsigned int ch = 0;
+
+  //  OML writer set up
+  CWriteOml OML;
+  std::string omlDbFilename("measured_carrier_offsets");
+  std::string omlServerName("idb2:3003");
+  //std::string omlServerName("file");
+  OML.init(omlDbFilename, omlServerName );
+  OML.start();
+
+
+  while ((!local_kill_switch) && (boost::get_system_time() < done_time)) {
+    //boost::this_thread::sleep(boost::posix_time::milliseconds(10));
+    if (boost::get_system_time() < next_console_refresh) continue;
+    next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(0.5e6));
+    while (rx_mdst.head != 0);
+    
+    rx_mdst.print_time();
+    //DBG_OUT(rx_mdst.head);
+    //DBG_OUT(rx_mdst.tail);
+
+    //std::cerr << rx_mdst.head << " " << rx_mdst.tail << std::endl;
+    //usrp1.plot1(rx_mdst, "10.13.0.10", "1337"); continue;
+
+    // find peaks for different channels
+    for (unsigned int ch = 0; ch < usrp1.nRxChannels(); ch++) {
+      std::vector<float> mag_buff( total_num_samps );
+      std::vector<std::complex<float> > fft_buff( total_num_samps );
+      fftwf_plan fft_p = fftwf_plan_dft_1d( total_num_samps,
+					    (fftwf_complex*)&rx_mdst._MultiDeviceBuffer.at( ch ).front(),
+					    (fftwf_complex*)&fft_buff.front(),
+					    FFTW_FORWARD,
+					    FFTW_ESTIMATE);
+
+      fftwf_execute(fft_p);
+
+      // magnitude - ignore frequencies around DC component
+      for(int i = 10; i < total_num_samps-10; i++)
+	mag_buff.at(i) = abs(fft_buff.at(i));
+
+
+      // find max value index                               - asm inline this
+      unsigned int pki = std::distance(mag_buff.begin(),
+				       std::max_element(mag_buff.begin(), mag_buff.end()) );
+      std::cerr << "channel: " << ch << ": " << pki << ": " << mag_buff.at(pki) << ": " << pki* usrp1.rx_rate(ch) / (total_num_samps) <<  std::endl;
+
+      OML.insert((uint32_t)usrp1.rx_rate(ch),
+		 (float)usrp1.rx_freq(ch),  
+		 (uint32_t)usrp1.rx_gain(ch),
+		 (uint32_t) total_num_samps,
+		 (uint32_t) ch,
+		 (uint32_t) pki,
+		 (float) mag_buff.at(pki),
+		 (float) pki* usrp1.rx_rate(ch) / (total_num_samps)
+		 );
+
+    } // for loop
+  } // while
+
+
 }
 
 
@@ -204,7 +306,6 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
     xml_file = tokens.at(0);
     xml_path = tokens.at(1);
 
-
     CRadio usrp1;
     if (usrp1.make_device_handle(xml_file, xml_path) == RETURN_ERROR) {
       std::cerr << "unable to make device" << std::endl;
@@ -218,6 +319,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
     if ( !vm.count("rx-only") && !vm.count("tx-only"))
     {
       std::cerr << "must specify flags --rx-only or --tx-only" << std::endl;
+      return 0;
     }
 
 
@@ -226,46 +328,53 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       DBG_OUT( usrp1.spb() );
 
       usrp1.init_rx();
-      unsigned int N_SPB_BUFFS = 32;
+      unsigned int N_SPB_BUFFS = 64*4;
 
       DeviceStorageType rx_mdst(usrp1.nRxChannels(), usrp1.spb(), N_SPB_BUFFS); // this should go on the heap
-      DBG_OUT(rx_mdst._MultiDeviceBuffer.size() );
-      //run_rx( rx_mdst );  // non-blocking call spawns a receive thread
+      //rx_mdst.print_info();
+      assert(rx_mdst._MultiDeviceBuffer.size() == usrp1.nRxChannels() );
 
-      unsigned int ch = 0;
-      total_num_samps = usrp1.spb() * N_SPB_BUFFS;
-      usrp1.run_rx( rx_mdst, seconds_in_future, total_num_samps);
-
-      DBG_OUT(rx_mdst.head);
-      DBG_OUT(total_num_samps);
-
-      //usrp1.plot1(rx_mdst, "10.13.0.10", "1337");
-
-
-      std::vector<float> mag_buff( total_num_samps );
-      std::vector<std::complex<float> > fft_buff( total_num_samps );
-      fftwf_plan fft_p = fftwf_plan_dft_1d( total_num_samps,
-					 (fftwf_complex*)&rx_mdst._MultiDeviceBuffer.at( ch ).front(),
-					 (fftwf_complex*)&fft_buff.front(),
-					 FFTW_FORWARD,
-					 FFTW_ESTIMATE);
-
-    fftwf_execute(fft_p);
-
-    // magnitude - no DC component
-    for(int i = 1; i < total_num_samps; i++)
-      mag_buff.at(i) = abs(fft_buff.at(i));
-
-
-    // find max value index                               - asm inline this
-    unsigned int pki = std::distance(mag_buff.begin(),
-				     std::max_element(mag_buff.begin(), mag_buff.end()) );
-    std::cerr << "channel: " << ch << ": " << pki << ": " << mag_buff.at(pki) << ": " << pki* usrp1.get_rx_rate(ch) / (total_num_samps) <<  std::endl;
-    
-
-      //rx_handler_soemthing_generic(usrp1, rx_mdst, run_time); 
-      //usrp1.stop_rx();
+#if 1 // threaded examples
+      usrp1.run_rx( rx_mdst );  // non-blocking call spawns a receive thread
+#if (TEST_CASE == TEST_FREQ_OFFSET_W_PPS)
+      rx_handler_find_peak_write_to_oml(usrp1, rx_mdst, run_time); 
+#endif
+#if (TEST_CASE == TEST_BAND_AMPLITUDE_W_PPS)
+      rx_handler_find_peaks(usrp1, rx_mdst, run_time);
+#endif
+      usrp1.stop_rx();
       boost::this_thread::sleep(boost::posix_time::milliseconds(250));
+
+
+#else // non threaded example
+      total_num_samps = usrp1.spb() * N_SPB_BUFFS;
+      usrp1.run_rx_once( rx_mdst, seconds_in_future, total_num_samps);
+
+      // example to find peak in all channels
+      usrp1.plot1(rx_mdst, "10.13.0.10", "1337");
+      for (unsigned int ch = 0; ch < usrp1.nRxChannels(); ch++) {
+
+	std::vector<float> mag_buff( total_num_samps );
+	std::vector<std::complex<float> > fft_buff( total_num_samps );
+	fftwf_plan fft_p = fftwf_plan_dft_1d( total_num_samps,
+					      (fftwf_complex*)&rx_mdst._MultiDeviceBuffer.at( ch ).front(),
+					      (fftwf_complex*)&fft_buff.front(),
+					      FFTW_FORWARD,
+					      FFTW_ESTIMATE);
+
+	fftwf_execute(fft_p);
+
+	// magnitude - ignore frequencies around DC component
+	for(int i = 10; i < total_num_samps-10; i++)
+	  mag_buff.at(i) = abs(fft_buff.at(i));
+
+
+	// find max value index                               - asm inline this
+	unsigned int pki = std::distance(mag_buff.begin(),
+					 std::max_element(mag_buff.begin(), mag_buff.end()) );
+	std::cerr << "channel: " << ch << ": " << pki << ": " << mag_buff.at(pki) << ": " << pki* usrp1.get_rx_rate(ch) / (total_num_samps) <<  std::endl;
+      }
+#endif
 
     }
 
@@ -274,7 +383,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       DBG_OUT( usrp1.spb() );
 
       std::vector<std::vector<std::complex<float> > > signal( usrp1.nTxChannels(), std::vector<std::complex<float> >(usrp1.spb() ));
-      unsigned int N_SPB_BUFFS = 8;
+      unsigned int N_SPB_BUFFS = 32;
 
       usrp1.init_tx();
       DeviceStorageType tx_mdst(usrp1.nTxChannels(), usrp1.spb(), N_SPB_BUFFS); // this should go on the heap
@@ -283,12 +392,18 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       usrp1.run_tx( tx_mdst );  // non-blocking call spawns a transmit thread thread
       boost::system_time next_update = boost::get_system_time();
 
-      while( !local_kill_switch ) { 
-	if (tx_mdst.head != 0) continue;
-
+#if (TEST_CASE == TEST_FREQ_OFFSET_W_PPS)
 	// do stuff here...                            time this part!!!
-	single_tone_1_256( 32, 0.1, signal.at(0) );
+	single_tone_1_256( 32, 0.5, signal.at(0) );
+#endif
 
+#if (TEST_CASE == TEST_BAND_AMPLITUDE_W_PPS)
+	int my_i[]   = {16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240};
+	float my_m[] = {.1, .1, .1, .1, .1, .1,  .1,  .1,  .1,  .1,  .1,  .1,  .1,  .1,  .1}; 
+	std::vector<unsigned int> bin_vec(my_i, my_i + sizeof(my_i) / sizeof(int) );
+	std::vector<float>        mag_vec(my_m, my_m + sizeof(my_m) / sizeof(float) );
+	multi_tone_1_256(bin_vec, mag_vec, signal.at(0));
+#endif
 	// copy signal to tx_mdst buffers for sending 
 	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
 
@@ -298,8 +413,17 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 		   (void*)signal.at(ch).data(), usrp1.spb() * sizeof(std::complex<float>) );
 	  }
 	}
-	tx_mdst.head = N_SPB_BUFFS; // kick off sending
 
+
+
+      while( !local_kill_switch ) { 
+	if (tx_mdst.head != 0) continue;
+
+
+	// if signal is constant then generate once above the while conditional.
+	// if sign is NOT constant then update signal here and copy to tx_mdst buffers.
+
+	tx_mdst.head = N_SPB_BUFFS; // kick off sending
 
       }
       usrp1.stop_tx();

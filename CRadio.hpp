@@ -14,7 +14,10 @@
 
 #define DBG_OUT(x) std::cerr << #x << " = " << x << std::endl
 #define RETURN_SUCCESS 0
-#define RETURN_ERROR    -1
+#define RETURN_ERROR  -1
+
+#define RX_MODE_FILL_CONT      0
+#define RX_MODE_FILL_N_PAUSE   1
 
 struct __s_tuner_conf {
   double freq;
@@ -47,7 +50,9 @@ class CRadio
     double _rxrate, _rxfreq, _rxgain;
     double _txrate, _txfreq, _txgain;
     double _bw;
-  bool _isRxInit, _isTxInit, _is_RxStreaming, _is_TxStreaming;
+    bool _isRxInit, _isTxInit, _is_RxStreaming, _is_TxStreaming;
+    bool _rx_pause;
+    unsigned int _rx_mode;
     std::vector<struct __s_radio_conf>  _radio_configs;
     unsigned int _nRadiosInConfig;
     unsigned int _nRxChannels;
@@ -65,7 +70,7 @@ class CRadio
 
     void run_rx(DeviceStorageType& rx_mdst);
     void stop_rx() { _is_RxStreaming = false; }
-    void run_rx(DeviceStorageType& rx_mdst, double seconds_in_future, size_t total_num_samps );
+    void run_rx_once(DeviceStorageType& rx_mdst, double seconds_in_future, size_t total_num_samps );
 
     void plot1(DeviceStorageType& rx_mdst, std::string udp_dst_addr, std::string port);
     void print_radio_configurations();
@@ -79,9 +84,10 @@ class CRadio
     unsigned int spb() { return _spb; }
     bool is_RxStreaming()  {return _is_RxStreaming; }
 
-    double get_rx_freq()   { return _rxfreq; }
-    double get_rx_rate(unsigned int ch)   { return _usrp->get_rx_rate( ch ) ; }
-    double get_rx_gain()   { return _rxgain; }
+    double rx_freq(unsigned int ch)   { return _usrp->get_rx_freq( ch ); }
+    double rx_rate(unsigned int ch)   { return _usrp->get_rx_rate( ch ); }
+    double rx_gain(unsigned int ch)   { return _usrp->get_rx_gain( ch ); }
+
     std::string get_rx_ant() { return _rxant; }
 
     double get_tx_freq()   { return _txfreq; }
@@ -116,7 +122,7 @@ int CRadio::make_device_handle(std::string XML_FILE_PATH, std::string xml_path_c
   //pugiNode.print(std::cout,"  ");
 
   _sync = pugiNode.attribute("sync") ? pugiNode.attribute("sync").as_string() : "now";
-
+  
   unsigned int rx_ch_assignment = 0;
   unsigned int tx_ch_assignment = 0;
   for (pugi::xml_node devNode = pugiNode.first_child(); devNode; devNode = devNode.next_sibling() ) {
@@ -125,20 +131,42 @@ int CRadio::make_device_handle(std::string XML_FILE_PATH, std::string xml_path_c
     radio_conf.ip   = devNode.attribute("ip").as_string();
     for (pugi::xml_node chNode = devNode.first_child(); chNode; chNode = chNode.next_sibling() ) {
       struct __s_tuner_conf tuner_conf;
-      tuner_conf.freq = chNode.attribute("rx_freq").as_double();
-      tuner_conf.rate = chNode.attribute("rx_rate").as_double();
-      tuner_conf.gain = chNode.attribute("rx_gain").as_double();
-      tuner_conf.bw   = chNode.attribute("rx_bw") ? chNode.attribute("rx_bw").as_double() : (double)(25e6); 
-      tuner_conf.ant  = chNode.attribute("rx_ant") ? chNode.attribute("rx_ant").as_string() : "RX2"; 
+
+      tuner_conf.freq = chNode.attribute("rx_freq") ? chNode.attribute("rx_freq").as_double()
+	                                            : pugiNode.attribute("rx_freq").as_double();
+
+      tuner_conf.gain = chNode.attribute("rx_gain") ? chNode.attribute("rx_gain").as_double()
+	                                            : pugiNode.attribute("rx_gain").as_double();
+
+      tuner_conf.rate = chNode.attribute("rx_rate") ? chNode.attribute("rx_rate").as_double()
+	                                            : pugiNode.attribute("rx_rate").as_double();
+
+      tuner_conf.bw = chNode.attribute("rx_bw") ? chNode.attribute("rx_bw").as_double()
+                                                : pugiNode.attribute("rx_bw").as_double();
+
+      tuner_conf.ant = chNode.attribute("rx_ant") ? chNode.attribute("rx_ant").as_string()
+                                                  : pugiNode.attribute("rx_ant").as_string();
+
       tuner_conf.idxChannelAssignment = rx_ch_assignment++;
       radio_conf.rx.push_back( tuner_conf );
 
       struct __s_tuner_conf tx_tuner_conf;
-      tx_tuner_conf.freq = chNode.attribute("tx_freq").as_double();
-      tx_tuner_conf.rate = chNode.attribute("tx_rate").as_double();
-      tx_tuner_conf.gain = chNode.attribute("tx_gain").as_double();
-      tx_tuner_conf.bw   = chNode.attribute("tx_bw") ? chNode.attribute("tx_bw").as_double() : (double)(25e6);
-      tx_tuner_conf.ant  = chNode.attribute("tx_ant") ? chNode.attribute("tx_ant").as_string() : "TX/RX"; 
+      tx_tuner_conf.freq = chNode.attribute("tx_freq") ? chNode.attribute("tx_freq").as_double()
+	                                            : pugiNode.attribute("tx_freq").as_double();
+
+      tx_tuner_conf.gain = chNode.attribute("tx_gain") ? chNode.attribute("tx_gain").as_double()
+	                                            : pugiNode.attribute("tx_gain").as_double();
+
+      tx_tuner_conf.rate = chNode.attribute("tx_rate") ? chNode.attribute("tx_rate").as_double()
+	                                            : pugiNode.attribute("tx_rate").as_double();
+
+      tx_tuner_conf.bw = chNode.attribute("tx_bw") ? chNode.attribute("tx_bw").as_double()
+                                                : pugiNode.attribute("tx_bw").as_double();
+
+      tx_tuner_conf.ant = chNode.attribute("tx_ant") ? chNode.attribute("tx_ant").as_string()
+                                                  : pugiNode.attribute("tx_ant").as_string();
+
+
       tx_tuner_conf.idxChannelAssignment = tx_ch_assignment++;
       radio_conf.tx.push_back( tx_tuner_conf );
 
@@ -183,6 +211,7 @@ int CRadio::make_device_handle(std::string XML_FILE_PATH, std::string xml_path_c
   else if (_sync == "pps"){
     _ref = "external";
     _usrp->set_time_source(_ref);
+    _usrp->set_clock_source(_ref);
     _usrp->set_time_unknown_pps(uhd::time_spec_t(0.0));
     boost::this_thread::sleep(boost::posix_time::seconds(1)); //wait for pps sync pulse
   }
@@ -292,6 +321,8 @@ void CRadio::run_rx( DeviceStorageType& rx_mdst )
 void CRadio::_run_rx(DeviceStorageType& rx_mdst)
 {
 
+  _usrp->set_time_now(uhd::time_spec_t(0.0) );
+
   //create a receive streamer - populate channel list
   //linearly map channels (index0 = channel0, index1 = channel1, ...)
   uhd::stream_args_t stream_args("fc32"); //complex floats
@@ -314,6 +345,8 @@ void CRadio::_run_rx(DeviceStorageType& rx_mdst)
   boost::system_time next_console_refresh = boost::get_system_time();
   uhd::rx_metadata_t _md;
 
+  //size_t num_rx_samps = _rx_stream->recv( _MultiDeviceWasteBuffer, _spb, _md, timeout);
+
   while( _is_RxStreaming ) {
     //receive multi channel buffers
     size_t num_rx_samps = _rx_stream->recv( rx_mdst._MultiDeviceBufferPtrs.at(rx_mdst.head), _spb, _md, timeout);
@@ -329,13 +362,17 @@ void CRadio::_run_rx(DeviceStorageType& rx_mdst)
     rx_mdst._BufferTime.at( 0 ).full_sec = _md.time_spec.get_full_secs();
     rx_mdst._BufferTime.at( 0 ).frac_sec = _md.time_spec.get_frac_secs();
 
-    // if storage buffers are full then dropp from tail end 
-    if ( ((rx_mdst.head + 1) % rx_mdst.nbuffptrs ) == rx_mdst.tail)
-      rx_mdst.tail = (rx_mdst.tail + 1) % rx_mdst.nbuffptrs;
+      // if storage buffers are full then drop from tail end 
+      if ( ((rx_mdst.head + 1) % rx_mdst.nbuffptrs ) == rx_mdst.tail)
+	rx_mdst.tail = (rx_mdst.tail + 1) % rx_mdst.nbuffptrs;
 
-    rx_mdst.head++;
-    rx_mdst.head = rx_mdst.head % rx_mdst.nbuffptrs;
+      rx_mdst.head++;
+      rx_mdst.head = rx_mdst.head % rx_mdst.nbuffptrs;
 
+    if (_rx_mode == 1) {
+      _rx_pause = true;
+      rx_mdst.head = rx_mdst.tail = 0;
+    }
 
     //handle the error code
     if (_md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) break;
@@ -343,13 +380,6 @@ void CRadio::_run_rx(DeviceStorageType& rx_mdst)
     else if (_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE){
       throw std::runtime_error(str(boost::format("Recv'd samples %i\nReceiver error %s") % num_rx_samps % _md.strerror()));
     }
-
-#if 0
-    if (boost::get_system_time() < next_console_refresh) continue;
-    next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
-    std::cerr << "[" << _md.time_spec.get_full_secs() + _md.time_spec.get_frac_secs() << "] ";
-    std::cerr << rx_mdst.head << " " << rx_mdst.tail << std::endl;
-#endif
 
   } // while()
 
@@ -365,7 +395,7 @@ void CRadio::_run_rx(DeviceStorageType& rx_mdst)
 
 
 
-void CRadio::run_rx(DeviceStorageType& rx_mdst, double seconds_in_future, size_t total_num_samps)
+void CRadio::run_rx_once(DeviceStorageType& rx_mdst, double seconds_in_future, size_t total_num_samps)
 {
 
   _usrp->set_time_now(uhd::time_spec_t(0.0) );
@@ -410,10 +440,15 @@ void CRadio::run_rx(DeviceStorageType& rx_mdst, double seconds_in_future, size_t
     else if (_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE){
       throw std::runtime_error(str(boost::format("Recv'd samples %i\nReceiver error %s") % num_acc_samps % _md.strerror()));
     }
-    int verbose = 1;
+    int verbose = 0;
     if(verbose) std::cout << boost::format(
 					   "Received packet: %u samples, %u full secs, %f frac secs"
 					   ) % num_rx_samps % _md.time_spec.get_full_secs() % _md.time_spec.get_frac_secs() << std::endl;
+
+
+    // if storage buffers are full then drop from tail end 
+    if ( ((rx_mdst.head + 1) % rx_mdst.nbuffptrs ) == rx_mdst.tail)
+      rx_mdst.tail = (rx_mdst.tail + 1) % rx_mdst.nbuffptrs;
 
     rx_mdst.head++;
     rx_mdst.head = rx_mdst.head % rx_mdst.nbuffptrs;
