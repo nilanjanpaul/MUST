@@ -9,15 +9,12 @@ clean :
 	rm multi_xml *.o
 
 remote-clean :
-	ssh root@node18-2 'rm -rf .tmp'
+	ssh root@node21-1 'rm -rf .tmp'
 
 remote-make :
-	ssh root@node18-2 'mkdir -p .tmp'
-	scp -r * root@node18-2:/root/.tmp/.
-	ssh root@node18-2 'cd .tmp && make'
-	ssh root@node19-2 'mkdir -p .tmp'
-	scp -r * root@node19-2:/root/.tmp/.
-	ssh root@node19-2 'cd .tmp && make'
+	ssh root@node21-1 'mkdir -p .tmp'
+	scp -r * root@node21-1:/root/.tmp/.
+	ssh root@node21-1 'cd .tmp && make'
 
 remote-run :
-	ssh root@node18-2 'cd .tmp; ./multi_xml --conf "devices.xml,/devices/active" --rx-only '
+	ssh root@node21-1 'cd .tmp; ./multi_xml --conf "devices.xml,/devices/active" --rx-only '

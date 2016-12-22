@@ -42,6 +42,17 @@ void signal_interrupt_control_c(int s){
   local_kill_switch = true;
 }
 
+static bool mag_compare(std::complex<float> a, std::complex<float> b)
+{
+  return (std::abs(a) < std::abs(b));
+}
+
+static bool real_compare(std::complex<float> a, std::complex<float> b)
+{
+  return (a.real() < b.real() );
+}
+
+
 
 void generate_freq_domain_signal(unsigned int spb, std::vector<unsigned int> bin, std::vector<float> mag, std::vector<std::complex<float> > &time_buff)
 {
@@ -132,15 +143,23 @@ void rx_handler_find_peaks(CRadio& usrp1, DeviceStorageType& rx_mdst, unsigned i
   unsigned int total_num_samps = rx_mdst.nsamps_per_ch;
 
 
+
+  //  OML writer set up
+  CWriteOml OML;
+  std::string omlDbFilename("measured_carrier_offsets");
+  std::string omlServerName("oml:3003");
+  OML.init(omlDbFilename, omlServerName );
+  OML.start();
+
+
+
   boost::system_time next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
   boost::system_time done_time = boost::get_system_time() + boost::posix_time::microseconds(long( run_time*1.0e6) );
-  unsigned int ch = 0;
-
 
   while ((!local_kill_switch) && (boost::get_system_time() < done_time)) {
     //boost::this_thread::sleep(boost::posix_time::milliseconds(10));
     if (boost::get_system_time() < next_console_refresh) continue;
-    next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(0.5e6));
+    next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
     while (rx_mdst.head != 0);
     
     rx_mdst.print_time();
@@ -166,19 +185,32 @@ void rx_handler_find_peaks(CRadio& usrp1, DeviceStorageType& rx_mdst, unsigned i
       for(int i = 10; i < total_num_samps-10; i++)
 	mag_buff.at(i) = abs(fft_buff.at(i));
 
-
       // find first 15 peaks
       std::cerr << "channel: " << ch << ": " << std::endl;
+      double avg_pw = 0.0;
       for (unsigned int i = 0; i < 15 ; ++i)
       {
 	// find max value index                               - asm inline this
 	unsigned int pki = std::distance(mag_buff.begin(),
 					 std::max_element(mag_buff.begin(), mag_buff.end()) );
-	std::cerr << pki << ": " << mag_buff.at(pki) << ": " << pki* usrp1.rx_rate(ch) / (total_num_samps) <<  std::endl;
+	//std::cerr << pki << ": " << mag_buff.at(pki) / total_num_samps << ": " << pki* usrp1.rx_rate(ch) / (total_num_samps) <<  std::endl;
 
+	avg_pw += (mag_buff.at(pki) * mag_buff.at(pki) / total_num_samps);
 	// now zero out this peak
 	mag_buff.at(pki) = 0.0;
       }
+      std::cerr << "ch: " << ch << " --- avg = " << 10*log10( avg_pw) << std::endl;
+
+
+      OML.insert((uint32_t)usrp1.rx_rate(ch),
+		 (float)usrp1.rx_freq(ch),  
+		 (uint32_t)usrp1.rx_gain(ch),
+		 (uint32_t) total_num_samps,
+		 (uint32_t) ch,
+		 (uint32_t) 0 /*pki*/,
+		 (float) 10*log10( avg_pw),
+		 (float) 0.0/*pki* usrp1.rx_rate(ch) / (total_num_samps) */
+		 );
 
     } // for loop channels
 
@@ -203,8 +235,7 @@ void rx_handler_find_peak_write_to_oml(CRadio& usrp1, DeviceStorageType& rx_mdst
   //  OML writer set up
   CWriteOml OML;
   std::string omlDbFilename("measured_carrier_offsets");
-  std::string omlServerName("idb2:3003");
-  //std::string omlServerName("file");
+  std::string omlServerName("oml:3003");
   OML.init(omlDbFilename, omlServerName );
   OML.start();
 
@@ -242,7 +273,7 @@ void rx_handler_find_peak_write_to_oml(CRadio& usrp1, DeviceStorageType& rx_mdst
       // find max value index                               - asm inline this
       unsigned int pki = std::distance(mag_buff.begin(),
 				       std::max_element(mag_buff.begin(), mag_buff.end()) );
-      std::cerr << "channel: " << ch << ": " << pki << ": " << mag_buff.at(pki) << ": " << pki* usrp1.rx_rate(ch) / (total_num_samps) <<  std::endl;
+      std::cerr << "channel: " << ch << ": " << pki << ": " << mag_buff.at(pki) / total_num_samps << ": " << pki* usrp1.rx_rate(ch) / (total_num_samps) <<  std::endl;
 
       OML.insert((uint32_t)usrp1.rx_rate(ch),
 		 (float)usrp1.rx_freq(ch),  
@@ -250,7 +281,7 @@ void rx_handler_find_peak_write_to_oml(CRadio& usrp1, DeviceStorageType& rx_mdst
 		 (uint32_t) total_num_samps,
 		 (uint32_t) ch,
 		 (uint32_t) pki,
-		 (float) mag_buff.at(pki),
+		 (float) mag_buff.at(pki) / (float) total_num_samps,
 		 (float) pki* usrp1.rx_rate(ch) / (total_num_samps)
 		 );
 
@@ -339,6 +370,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 #if (TEST_CASE == TEST_FREQ_OFFSET_W_PPS)
       rx_handler_find_peak_write_to_oml(usrp1, rx_mdst, run_time); 
 #endif
+
 #if (TEST_CASE == TEST_BAND_AMPLITUDE_W_PPS)
       rx_handler_find_peaks(usrp1, rx_mdst, run_time);
 #endif
@@ -436,3 +468,55 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
     std::cerr << std::endl << "Done!" << std::endl << std::endl;
     return EXIT_SUCCESS;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if 0
+// forward fft is unnormalized. so divide by N. In this case N = 256.
+
+    //---
+    {
+    std::vector<std::complex<float> > wb(256);
+    int my_i[]   = {16, 32 };
+    float my_m[] = {.1, .2 }; 
+    std::vector<unsigned int> bin_vec(my_i, my_i + sizeof(my_i) / sizeof(int) );
+    std::vector<float>        mag_vec(my_m, my_m + sizeof(my_m) / sizeof(float) );
+    multi_tone_1_256(bin_vec, mag_vec, wb );
+    // find max value index                               - asm inline this
+    unsigned int pki = std::distance(wb.begin(),
+				     std::max_element(wb.begin(), wb.end(), real_compare ) );
+    std::cerr << pki << ": " << wb.at(pki) <<  std::endl;
+    
+    std::vector<std::complex<float> > fft_buff( 256 );
+    fftwf_plan fft_p = fftwf_plan_dft_1d( 256,
+					  (fftwf_complex*)&wb.front(),
+					  (fftwf_complex*)&fft_buff.front(),
+					  FFTW_FORWARD,
+					  FFTW_ESTIMATE);
+
+    fftwf_execute(fft_p);
+    std::vector<float> mag_buff( 256 );
+    // magnitude - ignore frequencies around DC component
+    for(int i = 0; i < 256; i++)
+      mag_buff.at(i) = abs(fft_buff.at(i));
+
+    // find max value index                               - asm inline this
+                 pki = std::distance(mag_buff.begin(),
+				     std::max_element(mag_buff.begin(), mag_buff.end()) );
+    std::cerr << pki << ": " << mag_buff.at(pki)/256 << std::endl;
+
+    exit(0);
+    }	
+    //---
+#endif
