@@ -1,20 +1,20 @@
-all : multi_xml
+all : multi_simple
 
-multi_xml : multi_simple.cpp CTimer.cpp CTimer.h CRadio.hpp DeviceStorage.h CWriteOml.h
+multi_simple : multi_simple.cpp CTimer.cpp CTimer.h CRadio.hpp DeviceStorage.h CWriteOml.h
 	g++ -c multi_simple.cpp
 	g++ -c CTimer.cpp
-	g++ -o multi_xml multi_simple.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -luhd -lpugixml -lfftw3f -loml2
+	g++ -o multi_simple multi_simple.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -luhd -lpugixml -lfftw3f -loml2
 
 clean :
 	rm multi_xml *.o
 
 remote-clean :
-	ssh root@node21-1 'rm -rf .tmp'
+	ssh root@node3-20 'rm -rf .tmp'
 
 remote-make :
-	ssh root@node21-1 'mkdir -p .tmp'
-	scp -r * root@node21-1:/root/.tmp/.
-	ssh root@node21-1 'cd .tmp && make'
+	ssh root@node3-20 'mkdir -p .tmp'
+	scp -r * root@node3-20:/root/.tmp/.
+	ssh root@node3-20 'cd .tmp && make'
 
 remote-run :
-	ssh root@node21-1 'cd .tmp; ./multi_xml --conf "devices.xml,/devices/active" --rx-only '
+	ssh root@node3-20 'cd .tmp; ./multi_xml --conf "devices.xml,/devices/active" --rx-only '

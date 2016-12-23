@@ -142,16 +142,12 @@ void rx_handler_find_peaks(CRadio& usrp1, DeviceStorageType& rx_mdst, unsigned i
 
   unsigned int total_num_samps = rx_mdst.nsamps_per_ch;
 
-
-
   //  OML writer set up
   CWriteOml OML;
   std::string omlDbFilename("measured_carrier_offsets");
   std::string omlServerName("oml:3003");
   OML.init(omlDbFilename, omlServerName );
   OML.start();
-
-
 
   boost::system_time next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
   boost::system_time done_time = boost::get_system_time() + boost::posix_time::microseconds(long( run_time*1.0e6) );
@@ -186,7 +182,6 @@ void rx_handler_find_peaks(CRadio& usrp1, DeviceStorageType& rx_mdst, unsigned i
 	mag_buff.at(i) = abs(fft_buff.at(i));
 
       // find first 15 peaks
-      std::cerr << "channel: " << ch << ": " << std::endl;
       double avg_pw = 0.0;
       for (unsigned int i = 0; i < 15 ; ++i)
       {
@@ -195,11 +190,11 @@ void rx_handler_find_peaks(CRadio& usrp1, DeviceStorageType& rx_mdst, unsigned i
 					 std::max_element(mag_buff.begin(), mag_buff.end()) );
 	//std::cerr << pki << ": " << mag_buff.at(pki) / total_num_samps << ": " << pki* usrp1.rx_rate(ch) / (total_num_samps) <<  std::endl;
 
-	avg_pw += (mag_buff.at(pki) * mag_buff.at(pki) / total_num_samps);
+	avg_pw += mag_buff.at(pki) / total_num_samps;
 	// now zero out this peak
 	mag_buff.at(pki) = 0.0;
       }
-      std::cerr << "ch: " << ch << " --- avg = " << 10*log10( avg_pw) << std::endl;
+      std::cerr << "ch: " << ch << " --- avg pwr = " << 10*log10( avg_pw) << std::endl;
 
 
       OML.insert((uint32_t)usrp1.rx_rate(ch),
