@@ -21,6 +21,7 @@
 #include "DeviceStorage.h"
 
 #include <signal.h>
+#include "CSharedMemSimple.hpp"
 #include "CWriteOml.h"
 
 
@@ -33,6 +34,11 @@
 // SELECT ME
 #define TEST_CASE TEST_BAND_AMPLITUDE_W_PPS
 
+struct __s_SharedMemoryControl {
+  unsigned char type;
+  unsigned char len;
+  unsigned char pyld[1000];
+};
 
 namespace po = boost::program_options;
 
@@ -310,7 +316,6 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
         ("time", po::value<unsigned int>(&run_time)->default_value(10), "run time in seconds")
         ("rx-only", "enable receive side only")
         ("tx-only", "enable transmit side only")
-
     ;
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -325,6 +330,15 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
     // Ctrl-C for breaking
     signal (SIGINT, signal_interrupt_control_c);
 
+    // Set up shared memory buffer
+    std::string shm_uid("/SharedMemoryControlBuffer");
+    CSharedMemSimple shm_buf(SHM_MASTER, shm_uid, sizeof(struct __s_SharedMemoryControl));
+    shm_buf.set_master_mode();
+    shm_buf.info();
+    volatile struct __s_SharedMemoryControl *rc_ptr = (struct __s_SharedMemoryControl *)shm_buf.ptr();
+
+
+    // parse xml args
     std::vector<std::string> tokens;
     boost::split(tokens, xml_config_str, boost::is_any_of(","), boost::token_compress_on);
     assert(tokens.size() == 2 );

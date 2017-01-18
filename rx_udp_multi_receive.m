@@ -10,7 +10,27 @@ if (exist("SELECT","var") == 0)
   SELECT = 0;
 endif
 
-if (SELECT == 0)
+  _spb = 256;
+
+
+  SYNC_TONE_1 = 4;
+  SYNC_TONE_2 = 14;
+
+  REFERENCE_ = zeros(1, _spb/2);
+  REFERENCE_( SYNC_TONE_1/2 + 1) = .9;
+  ref4_ = (ifft(REFERENCE_)) * _spb/2;
+
+
+  REFERENCE_ = zeros(1, _spb/2);
+  REFERENCE_( SYNC_TONE_2/2 + 1) = .9;
+  ref16_ = (ifft(REFERENCE_)) * _spb/2;
+
+  reference_ = [ref4_ ref16_ zeros(1,256*3)];  % this is TD reference signal
+  REFERENCE_ = fft(reference_, 1024);   % this is FD reference signal
+
+
+%while (true)
+  printf("\nWaiting for signal...\n");
   clear y
   clear MultiDeviceBuffer
 
@@ -32,15 +52,15 @@ if (SELECT == 0)
     MultiDeviceBuffer(channel,:) = y(:);
   endfor
 
+  plot (real( MultiDeviceBuffer(1,:)  ),'b' );
+  sleep(.1)
+  
+    signal_ = MultiDeviceBuffer(1,:);
+    SIGNAL_  = fft(signal_, 1024);
+    signal_corr_ = ifft(SIGNAL_ .* conj(REFERENCE_ )) * 1024/2;
+    [x,xi] = max(abs(signal_corr_));
+    s = sprintf("idx,mag:: %i  %f ", xi, x);
+    display(s)
 
-  plot (real( MultiDeviceBuffer(1,[100:end])  ),'b' ); hold on;
-  plot (real( MultiDeviceBuffer(2,[100:end])  ),'r' ); hold off;
 
-  %last_idx =  length(MultiDeviceBuffer(1,:));
-  %max ( real( MultiDeviceBuffer(1,[100: last_idx])  )  )
-  %max ( real( MultiDeviceBuffer(2,[100: last_idx])  )  )
-  sleep(.2);
-
-endif
-
-
+%endwhile

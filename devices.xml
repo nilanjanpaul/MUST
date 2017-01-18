@@ -1,17 +1,37 @@
 <?xml version="1.0"?>
 <devices>
   <!-- Sampling rates must be the same for all channels -->
-  <!-- Parent attr take precedence over device attr -->
+  <!-- Child attr take precedence over parent attr -->
   <!-- B210s frequency has to be same for both channels -->
+  <!-- B210s and N210,X310 cannot coexist in device list -->
   
-  <grid_rx sync="pps" rx_freq="3900e6" rx_rate="2e6">  
+
+  <grid_tx sync="now" tx_freq="1900e6" tx_rate="5e6">  
     <device type="n210" ip="192.168.10.2">
-      <ch rx_dll_obj="" rx_gain="20" rx_bw="25e6" rx_ant="RX2"
+      <ch tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+    </device>
+  </grid_tx>
+
+  <grid_rx sync="now" rx_freq="1900e6" rx_rate="5e6" rx_gain="10">  
+    <device type="n210" ip="192.168.101.102">
+      <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2"
 	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
     </device>
+
+    <device type="n210" ip="192.168.102.101">
+      <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2"
+	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+    </device>
+
+    <device type="n210" ip="192.168.102.102">
+      <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2"
+	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+    </device>
+
   </grid_rx>
 
   <grid_b210 sync="pps" rx_freq="4400e6" rx_rate="2e6" tx_gain="80" tx_freq="3900e6" tx_rate="2e6">
+
     <device type="b200" >
       <ch rx_dll_obj=""  rx_bw="25e6" rx_ant="RX2"
 	  tx_dll_obj=""  tx_bw="25e6" tx_ant="TX/RX" />

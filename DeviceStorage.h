@@ -27,8 +27,10 @@ struct _s_MultiDeviceStorageType {
   std::vector<struct _s_DeviceBufferTimeType> _BufferTime;
   
 
+  // constructor
   _s_MultiDeviceStorageType() { }
 
+  // constructor
   _s_MultiDeviceStorageType(unsigned int _nRxChannels, unsigned int _spb, unsigned int _num_buff_ptrs)
   {
     init(_nRxChannels, _spb, _num_buff_ptrs);
@@ -66,11 +68,8 @@ struct _s_MultiDeviceStorageType {
 
     assert(_MultiDeviceBufferPtrs.size() == nbuffptrs);
     
-
-    
     for (unsigned int i = 0; i < _nRxChannels; i++)
       _MultiDeviceWasteBuffer.push_back( std::vector<std::complex<float> >(_spb) );
-    
 
   } // end of init
 
@@ -79,6 +78,8 @@ struct _s_MultiDeviceStorageType {
     unsigned int idx = 0;//head; // head may be updated
     std::cerr << "[" << _BufferTime.at(idx).full_sec + _BufferTime.at(idx).frac_sec << "] " << std::endl;
   }
+
+  void* buffer_ptr_ch_(unsigned int ch) { return((void*)_MultiDeviceBuffer.at( ch ).data()); }
 
   void print_info()
   {
