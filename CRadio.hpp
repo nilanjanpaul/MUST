@@ -334,12 +334,13 @@ void CRadio::init_rx()
       _usrp->set_rx_antenna( tuner_conf.ant, tuner_conf.idxChannelAssignment );
       _usrp->set_rx_bandwidth(tuner_conf.bw, tuner_conf.idxChannelAssignment );
 
-      std::cout << boost::format("Device: %s ") % radio_conf.ip << " --- " << "channel assignment: " << tuner_conf.idxChannelAssignment << std::endl;
-      std::cout << boost::format("RX Rate: %f (%f) Msps") % (_usrp->get_rx_rate( i )/1e6) %  (tuner_conf.rate/1e6) << std::endl;
-      std::cout << boost::format("RX Freq: %f (%f) MHz") % (_usrp->get_rx_freq( i )/1e6) % (tuner_conf.freq/1e6) << std::endl;
-      std::cout << boost::format("RX Gain: %f (%f) dB") % _usrp->get_rx_gain( i ) % tuner_conf.gain << std::endl;
-      std::cout << boost::format("RX Ant : %s (%s) ") % _usrp->get_rx_antenna( i ) % tuner_conf.ant << std::endl;
-      std::cout << boost::format("RX BW: %f (%f) MHz") % (_usrp->get_rx_bandwidth( i )/1e6) % (tuner_conf.bw/1e6) << std::endl;
+      unsigned int ch_i = tuner_conf.idxChannelAssignment;
+      std::cout << boost::format("Device: %s ") % radio_conf.ip << " --- " << "channel assignment: " << ch_i << std::endl;
+      std::cout << boost::format("RX Rate: %f (%f) Msps") % (_usrp->get_rx_rate( ch_i )/1e6) %  (tuner_conf.rate/1e6) << std::endl;
+      std::cout << boost::format("RX Freq: %f (%f) MHz") % (_usrp->get_rx_freq( ch_i )/1e6) % (tuner_conf.freq/1e6) << std::endl;
+      std::cout << boost::format("RX Gain: %f (%f) dB") % _usrp->get_rx_gain( ch_i ) % tuner_conf.gain << std::endl;
+      std::cout << boost::format("RX Ant : %s (%s) ") % _usrp->get_rx_antenna( ch_i ) % tuner_conf.ant << std::endl;
+      std::cout << boost::format("RX BW: %f (%f) MHz") % (_usrp->get_rx_bandwidth( ch_i )/1e6) % (tuner_conf.bw/1e6) << std::endl;
       std::cout << std::endl;
     }
 
@@ -411,7 +412,7 @@ void CRadio::_run_rx( )
   _rx_stream = _usrp->get_rx_stream(stream_args);
 
   //setup streaming
-  double delay_sec = 1.5;
+  double delay_sec = 0.5;
   uhd::stream_cmd_t stream_cmd(uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS);
   stream_cmd.stream_now = false;
   stream_cmd.time_spec = uhd::time_spec_t(delay_sec);
@@ -579,12 +580,13 @@ void CRadio::init_tx()
       _usrp->set_tx_antenna( tuner_conf.ant, tuner_conf.idxChannelAssignment );
       _usrp->set_tx_bandwidth(tuner_conf.bw, tuner_conf.idxChannelAssignment );
 
-      std::cout << boost::format("Device: %s ") % radio_conf.ip <<  std::endl;
-      std::cout << boost::format("TX Rate: %f (%f) Msps") % (_usrp->get_tx_rate( i )/1e6) %  (tuner_conf.rate/1e6) << std::endl;
-      std::cout << boost::format("TX Freq: %f (%f) MHz") % (_usrp->get_tx_freq( i )/1e6) % (tuner_conf.freq/1e6) << std::endl;
-      std::cout << boost::format("TX Gain: %f (%f) dB") % _usrp->get_tx_gain( i ) % tuner_conf.gain << std::endl;
-      std::cout << boost::format("TX Ant : %s (%s) ") % _usrp->get_tx_antenna( i ) % tuner_conf.ant << std::endl;
-      std::cout << boost::format("TX BW: %f (%f) MHz") % (_usrp->get_tx_bandwidth( i )/1e6) % (tuner_conf.bw/1e6) << std::endl;
+      unsigned int ch_i = tuner_conf.idxChannelAssignment;
+      std::cout << boost::format("Device: %s ") % radio_conf.ip << " --- " << "channel assignment: " << ch_i << std::endl;
+      std::cout << boost::format("TX Rate: %f (%f) Msps") % (_usrp->get_tx_rate( ch_i )/1e6) %  (tuner_conf.rate/1e6) << std::endl;
+      std::cout << boost::format("TX Freq: %f (%f) MHz") % (_usrp->get_tx_freq( ch_i )/1e6) % (tuner_conf.freq/1e6) << std::endl;
+      std::cout << boost::format("TX Gain: %f (%f) dB") % _usrp->get_tx_gain( ch_i ) % tuner_conf.gain << std::endl;
+      std::cout << boost::format("TX Ant : %s (%s) ") % _usrp->get_tx_antenna( ch_i ) % tuner_conf.ant << std::endl;
+      std::cout << boost::format("TX BW: %f (%f) MHz") % (_usrp->get_tx_bandwidth( ch_i )/1e6) % (tuner_conf.bw/1e6) << std::endl;
       std::cout << std::endl;
     }
     

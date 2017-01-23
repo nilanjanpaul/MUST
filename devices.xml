@@ -1,23 +1,68 @@
 <?xml version="1.0"?>
 <devices>
   <!-- Sampling rates must be the same for all channels -->
-  <!-- Child attr take precedence over parent attr -->
+  <!-- Device (child) attr take precedence over group (parent) attr -->
   <!-- B210s frequency has to be same for both channels -->
   <!-- B210s and N210,X310 cannot coexist in device list -->
-  
 
-  <grid_tx sync="now" tx_freq="1900e6" tx_rate="5e6">  
-    <device type="n210" ip="192.168.10.2">
-      <ch tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
-    </device>
-  </grid_tx>
 
-  <grid_rx sync="now" rx_freq="1900e6" rx_rate="5e6" rx_gain="10">  
+  <!-- Format and description:
+  <_grp_rx_ sync="now" rx_freq="1900e6" rx_rate="5e6" rx_gain="10">  
     <device type="n210" ip="192.168.101.102">
       <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2"
 	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
     </device>
 
+    <device type="x310" ip="10.10.23.2">
+      <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2"
+	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+    </device>
+  </_grp_rx_>
+
+
+   *** Group (parent) nodes / attributes ***
+   * _grp_rx_   = specify a group name for a cluster of devices
+   * sync       = clock/time source options
+                    now - use internal clock,
+                    pps - use external clock and external time source
+
+   *** Device (child) nodes / attributes ***
+   * device     = this specifies a unique radio
+   * type       = device category options
+                    b200 - this USB based devices. ie. no IP address
+                    n210 - IP addressable, must specify sttribute: ip
+                    x310 - IP addressable, must specify sttribute: ip
+   * ip         = address of device
+
+   *** Group / Device attributes,   device attribute takes precedence***
+   * rx_freq    = receiver carrier frequency
+   * rx_gain    = receiver gain
+   * rx_rate    = receiver sample rate
+   * rx_bw      = receiver bandwidth
+   * rx_ant     = receiver antenna options:
+                     TX/RX,
+                     RX2
+
+   * tx_freq    = transmit carrier frequency
+   * tx_gain    = transmit gain
+   * tx_rate    = transmit sample rate
+   * tx_bw      = transmit bandwidth
+   * tx_ant     = transmit antenna options:
+                    TX/RX
+     
+                                                           -->
+  <grid_tx sync="pps" tx_freq="900e6" tx_rate="2e6">  
+    <device type="n210" ip="192.168.10.2">
+      <ch tx_dll_obj="" tx_gain="0" tx_bw="25e6" tx_ant="TX/RX" />
+    </device>
+  </grid_tx>
+
+  <grid_rx sync="pps" rx_freq="900e6" rx_rate="2e6" rx_gain="10">  
+
+    <device type="n210" ip="192.168.101.102">
+      <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2"
+	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+    </device>
     <device type="n210" ip="192.168.102.101">
       <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2"
 	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
@@ -29,6 +74,32 @@
     </device>
 
   </grid_rx>
+
+
+  <grid_tx_c2 sync="pps" tx_freq="1900e6" tx_rate="5e6">  
+    <device type="n210" ip="192.168.19.1">
+      <ch tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+    </device>
+  </grid_tx>
+
+  <grid_rx_c2 sync="pps" rx_freq="1900e6" rx_rate="5e6" rx_gain="10">  
+    <device type="n210" ip="192.168.119.102">
+      <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2"
+	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+    </device>
+
+    <device type="n210" ip="192.168.120.101">
+      <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2"
+	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+    </device>
+
+    <device type="n210" ip="192.168.120.102">
+      <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2"
+	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+    </device>
+
+  </grid_rx>
+
 
   <grid_b210 sync="pps" rx_freq="4400e6" rx_rate="2e6" tx_gain="80" tx_freq="3900e6" tx_rate="2e6">
 
@@ -93,17 +164,18 @@
 
   </mimo_rx>
 
-  <sb3_rx sync="now" rx_freq="900e6" rx_rate="2e6" rx_gain="10">  
+
+  <sb7_rx sync="now" rx_freq="900e6" rx_rate="2e6" rx_gain="10">  
     <device type="n210" ip="192.168.10.2">
-      <ch rx_dll_obj="" rx_gain="20" rx_bw="25e6" rx_ant="RX2"
-	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+      <ch rx_dll_obj="" rx_bw="25e6" rx_ant="RX2" />
     </device>
-  </sb3_rx>
-  <sb3_tx sync="now" tx_freq="900e6" tx_rate="2e6" tx_gain="10">
+  </sb7_rx>
+
+  <sb7_tx sync="now" tx_freq="900e6" tx_rate="2e6" tx_gain="0">
     <device type="n210" ip="192.168.101.102">
-      <ch rx_dll_obj="" rx_gain="20" rx_bw="25e6" rx_ant="RX2"
-	  tx_dll_obj="" tx_gain="20" tx_bw="25e6" tx_ant="TX/RX" />
+      <ch tx_dll_obj="" tx_bw="25e6" tx_ant="TX/RX" />
     </device>
-  </sb3_tx>
+  </sb7_tx>
+
 
 </devices>

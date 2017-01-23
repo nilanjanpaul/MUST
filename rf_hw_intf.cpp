@@ -33,14 +33,6 @@
 #define DEFAULT_COMMAND_SERVER_PORT 5180
 
 
-#define TEST_FREQ_OFFSET_W_PPS     0
-#define TEST_BAND_AMPLITUDE_W_PPS  1
-#define TEST_COMMAND_LINE_SAMPS  2
-
-
-// SELECT ME
-#define TEST_CASE TEST_COMMAND_LINE_SAMPS
-
 using boost::asio::ip::tcp;
 
 using namespace log4cxx;
@@ -65,6 +57,8 @@ void signal_interrupt_control_c(int s){
   printf("Caught signal %d\n",s);
   local_kill_switch = true;
 }
+
+static bool sort_f32_asc (float i,float j) { return (i<j); }
 
 static bool mag_compare(std::complex<float> a, std::complex<float> b)
 {
@@ -177,7 +171,11 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
   boost::system_time next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
   boost::system_time done_time = boost::get_system_time() + boost::posix_time::microseconds(long( run_time*1.0e6) );
 
-  // calc noise floor ?
+  // noise floor measurement
+  bool nf_ready = false;
+  std::vector<float> mag4hist(500);
+  float mag4_threshold = 0.0;
+  unsigned int nf_idx = 0;
 
   // sync stuff
   unsigned int state = 0;
@@ -204,7 +202,6 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
 
 
 
-
   while ((!local_kill_switch) && (boost::get_system_time() < done_time)) {
 
     if (rx_mdst._tail == rx_mdst._head) continue;
@@ -224,12 +221,49 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
     for(int i = 0; i < spb; i++)
       mag_buff.at(i) = abs(fft_buff.at(i));
 
+    // before doing anything else calc  noise level statistics for bin 4
+    // and set bin 4 detection threshold
+    if (nf_ready != true) { 
+      
+      mag4hist.at( nf_idx++ ) = mag_buff.at(4);
+      if ( nf_idx == mag4hist.size() ) { 
+      
+	nf_ready = true;
+	std::cerr << "nf ready!";
+
+	std::sort (mag4hist.begin(), mag4hist.end(), sort_f32_asc);
+	//for(int i = 0; i < mag4hist.size(); i++)  std::cerr << mag4hist.at(i) << std::endl;
+
+	float sum = 0.0;
+	float sum_sq = 0.0;
+	float avg, variance, stddev;
+	for(int i = 0; i < mag4hist.size()-1; i++) {
+	  sum += mag4hist.at(i);
+	  sum_sq += mag4hist.at(i) * mag4hist.at(i);
+	}
+	avg = sum / ( mag4hist.size()-1) ;
+	variance = sum_sq / ( mag4hist.size()-1)  - (avg * avg);
+	stddev = sqrt(variance);
+	std::cerr << "nf mag4 avg: " << avg << std::endl;
+	std::cerr << "nf mag4 var: " << variance << std::endl;
+	std::cerr << "nf mag4 std: " << stddev << std::endl;
+	
+	float n_stddevs = 10.0;
+	mag4_threshold = avg + n_stddevs * stddev;
+	std::cerr << "mag4 thres = " << mag4_threshold << " --- this is " << n_stddevs << " stddev away from mean" << std::endl;
+      }
+    }
+
+
+
     // find max value index                               - asm inline this
     unsigned int pki = std::distance(mag_buff.begin(),
 				     std::max_element(mag_buff.begin(), mag_buff.end()) );
 
-    if ((state == 0) && 
-	(pki == 4) &&
+    if ((nf_ready == true) && 
+	(state == 0) && 
+	//(pki == 4) &&
+	(mag_buff.at(4) > mag4_threshold) &&
 	(rx_mdst._tail < (rx_mdst.nbuffptrs() - 4) ))  // check roll over cond at tail - simple method
       {
 	mag_4m1   = mag_buff.at(4);
@@ -238,7 +272,8 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
 
 	state = 1;
       }
-    else if ((state == 1)  ) {
+    else if ((nf_ready == true) && 
+	     (state == 1)  ) {
       // check tail buffer idx @ -1 0
       std::cerr << mag_4m1   << " " << mag_14m1  << std::endl;
       std::cerr << mag_buff.at(4)  << " " << mag_buff.at(14) << std::endl;
@@ -264,7 +299,7 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
 						   std::max_element(t_corr_m4_buff.begin(), t_corr_m4_buff.end(), mag_compare) );
 
       DBG_OUT(sample_corr_idx);
-   
+      
       usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 0, rx_mdst._tail-2), spb * 4);
       usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 1, rx_mdst._tail-2), spb * 4);
       usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 2, rx_mdst._tail-2), spb * 4);
@@ -284,6 +319,7 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
     if (boost::get_system_time() < next_console_refresh) continue;
     next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1000e3));
 
+    DBG_OUT(mag_buff.at(4));
     //DBG_OUT(rx_mdst._head);
     //DBG_OUT(rx_mdst._tail);
 
@@ -366,7 +402,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
     double seconds_in_future;
     size_t total_num_samps;
     double rate, freq, gain;
-    unsigned int run_time;
+    unsigned int run_time, delay_ms;
     short command_server_port;
 
     //setup the program options
@@ -379,6 +415,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
         ("time", po::value<unsigned int>(&run_time)->default_value(10), "run time in seconds")
         ("sync", po::value<std::string>(&sync_samps_str), "cf32 sync signal")
         ("sig", po::value<std::string>(&sig_samples_str), "cf32 samples")
+        ("intv", po::value<unsigned int>(&delay_ms)->default_value(2000), "transmit interval between signal burst")
         ("rx-only", "enable receive side only")
         ("tx-only", "enable transmit side only")
         ("cmd-port", po::value<short>(&command_server_port)->default_value(5180),"command server port")
@@ -473,7 +510,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	for (unsigned int i = 0; i < tokens.size() ; i++) {
 	  std::complex<float> cf = boost::lexical_cast<std::complex<float> >( tokens.at(i) );
 	  tx_sync.push_back(cf);
-	  std::cout << tokens.at(i) << " " << cf << std::endl;
+	  //std::cout << tokens.at(i) << " " << cf << std::endl;
 	}
 	assert(tokens.size() == tx_sync.size() );
 	assert(tx_sync.size() == usrp1.spb() );
@@ -542,7 +579,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	// if sign is NOT constant then update signal here and copy to tx_mdst buffers.
 
 	// send signal in intervals
-	boost::this_thread::sleep(boost::posix_time::milliseconds(2000));
+	boost::this_thread::sleep(boost::posix_time::milliseconds(delay_ms));
 
 	tx_mdst._head = N_SPB_BUFFS; // kick off sending
 	std::cerr << ".";
@@ -593,7 +630,7 @@ std::string command_parse (std::vector<char> command)
     for (unsigned int i = 0; i < usrp1.nRxChannels(); i++)
     {
       double act_val = usrp1.rx_freq(i);
-      std::string s = "rxrate " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
+      std::string s = "rxfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
       temp += s + " ";
       LOG4CXX_INFO(logger, s);
     } 
@@ -634,7 +671,27 @@ std::string command_parse (std::vector<char> command)
     for (unsigned int i = 0; i < usrp1.nTxChannels(); i++)
     {
       double act_val = usrp1.tx_freq(i);
-      std::string s = "txrate " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
+      std::string s = "txfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
+      temp += s + " ";
+      LOG4CXX_INFO(logger, s);
+    } 
+  }
+  else if ( (sToken.size() == 3) && (sToken.at(0) == "txgain") && (sToken.at(1) == "all")) {
+    double set_val = boost::lexical_cast<double>( sToken.at(2) );
+    for (unsigned int i = 0; i < usrp1.nTxChannels(); i++)
+    {
+      double act_val = usrp1.tx_gain(i, set_val);
+      std::string s = "txgain " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
+      temp += s + " ";
+      LOG4CXX_INFO(logger, s);
+    } 
+  }
+
+  else if ( (sToken.size() == 2) && (sToken.at(0) == "txgain") && (sToken.at(1) == "all")) {
+    for (unsigned int i = 0; i < usrp1.nTxChannels(); i++)
+    {
+      double act_val = usrp1.tx_gain(i);
+      std::string s = "txgain " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
       temp += s + " ";
       LOG4CXX_INFO(logger, s);
     } 
@@ -650,8 +707,6 @@ std::string command_parse (std::vector<char> command)
     temp += "rx hold: " + sToken.at(1);
     LOG4CXX_INFO(logger, temp);
   }
-
-
   else {
     temp = "---Unknown command---";
   }
