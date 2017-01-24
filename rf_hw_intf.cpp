@@ -204,12 +204,12 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
 
   while ((!local_kill_switch) && (boost::get_system_time() < done_time)) {
 
-    if (rx_mdst._tail == rx_mdst._head) continue;
+    if (rx_mdst.tail() == rx_mdst.head() ) continue;
 
     unsigned int ch = 0; // this is the channel to trigger on
 
     fftwf_plan fft_p = fftwf_plan_dft_1d( spb,
-					  (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst._tail),
+					  (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail()),
 					  (fftwf_complex*)&fft_buff.front(),
 					  FFTW_FORWARD,
 					  FFTW_ESTIMATE);
@@ -229,7 +229,7 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
       if ( nf_idx == mag4hist.size() ) { 
       
 	nf_ready = true;
-	std::cerr << "nf ready!";
+	std::cerr << "nf ready!" << std::endl;
 
 	std::sort (mag4hist.begin(), mag4hist.end(), sort_f32_asc);
 	//for(int i = 0; i < mag4hist.size(); i++)  std::cerr << mag4hist.at(i) << std::endl;
@@ -264,11 +264,11 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
 	(state == 0) && 
 	//(pki == 4) &&
 	(mag_buff.at(4) > mag4_threshold) &&
-	(rx_mdst._tail < (rx_mdst.nbuffptrs() - 4) ))  // check roll over cond at tail - simple method
+	(rx_mdst.tail() < (rx_mdst.nbuffptrs() - 4) ))  // check roll over cond at tail - simple method
       {
 	mag_4m1   = mag_buff.at(4);
 	mag_14m1  = mag_buff.at(14);
-	LOG4CXX_INFO(logger, "ch | tail | head | pki | mag " << ch << " " << rx_mdst._tail << " " << rx_mdst._head << " " << pki << " " << mag_buff.at(pki));
+	LOG4CXX_INFO(logger, "ch | tail | head | pki | mag " << ch << " " << rx_mdst.tail() << " " << rx_mdst.head() << " " << pki << " " << mag_buff.at(pki));
 
 	state = 1;
       }
@@ -280,7 +280,7 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
 
 
       fftwf_plan fft_1024 = fftwf_plan_dft_1d( spb*4,
-					       (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst._tail-2),
+					       (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail(-2)),
 					       (fftwf_complex*)&fft_m4_buff.front(),
 					       FFTW_FORWARD,
 					       FFTW_ESTIMATE);
@@ -300,10 +300,10 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
 
       DBG_OUT(sample_corr_idx);
       
-      usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 0, rx_mdst._tail-2), spb * 4);
-      usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 1, rx_mdst._tail-2), spb * 4);
-      usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 2, rx_mdst._tail-2), spb * 4);
-      LOG4CXX_INFO(logger, "tail | head : " << rx_mdst._tail << " " << rx_mdst._head );;
+      usrp1.plot_buffer("10.17.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 0, rx_mdst.tail(-2)), spb * 4);
+      //usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 1, rx_mdst._tail-2), spb * 4);
+      //usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 2, rx_mdst._tail-2), spb * 4);
+      LOG4CXX_INFO(logger, "tail | head : " << rx_mdst.tail() << " " << rx_mdst.head() );;
 
 
       //usrp1.plot_rx("10.10.0.10", "1337", rx_mdst._tail-2, 4);
@@ -312,8 +312,8 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
     }
    
     // increment tail for next round
-    rx_mdst._tail++;
-    rx_mdst._tail = rx_mdst._tail % rx_mdst.nbuffptrs();
+    rx_mdst.tail_inc();
+    //rx_mdst._tail = rx_mdst._tail % rx_mdst.nbuffptrs();
 
     //boost::this_thread::sleep(boost::posix_time::milliseconds(1));
     if (boost::get_system_time() < next_console_refresh) continue;
@@ -345,7 +345,7 @@ void rx_handler_find_peaks(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int 
     if (boost::get_system_time() < next_console_refresh) continue;
     next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(500e3));
 
-    while (rx_mdst._head != 0);
+    while (rx_mdst.head() != 0);
     
     rx_mdst.print_time();
     //DBG_OUT(rx_mdst.head);
@@ -514,6 +514,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	}
 	assert(tokens.size() == tx_sync.size() );
 	assert(tx_sync.size() == usrp1.spb() );
+
       }
 
       std::vector<std::complex<float> > tx_signal;
@@ -544,7 +545,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	// copy sync to tx_mdst buffers at idx = 0
 	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
 	  // replicate signal to all (N_SPB_BUFFS) buffers per chan
-	  for (unsigned int idx = 0; idx < 1; idx++) {
+	  for (unsigned int idx = 0; idx < 2; idx++) {
 	    memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
 		   (void*)tx_sync.data(), usrp1.spb() * sizeof(std::complex<float>) );
 	  }
@@ -553,7 +554,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	// copy signal to tx_mdst buffers at idx = 1.. N_SPB_BUFFS
 	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
 	  // replicate signal to all (N_SPB_BUFFS) buffers per chan
-	  for (unsigned int idx = 1; idx < N_SPB_BUFFS; idx++) {
+	  for (unsigned int idx = 2; idx < N_SPB_BUFFS; idx++) {
 	    memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
 		   (void*)tx_signal.data(), usrp1.spb() * sizeof(std::complex<float>) );
 	  }
@@ -572,7 +573,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       }
 
       while( !local_kill_switch ) { 
-	if (tx_mdst._head != 0) continue;
+	if (tx_mdst.head() != 0) continue;
 
 
 	// if signal is constant then generate once above the while conditional.
@@ -581,12 +582,12 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	// send signal in intervals
 	boost::this_thread::sleep(boost::posix_time::milliseconds(delay_ms));
 
-	tx_mdst._head = N_SPB_BUFFS; // kick off sending
+	tx_mdst.head_set( N_SPB_BUFFS); // kick off sending
 	std::cerr << ".";
       }
       usrp1.stop_tx();
-      tx_mdst._head = 0;
-      tx_mdst._tail = 0;
+      tx_mdst.head_set ( 0 );
+      tx_mdst.tail_set ( 0 );
 
     }
     boost::this_thread::sleep(boost::posix_time::milliseconds(1000));

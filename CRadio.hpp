@@ -19,7 +19,7 @@
 
 // Define number of buffers to store
 #define RX_DEV_STORAGE_N_SPB_BUFFS  (64*4)
-#define TX_DEV_STORAGE_N_SPB_BUFFS  (32)
+#define TX_DEV_STORAGE_N_SPB_BUFFS  (16)
 
 struct __s_tuner_conf {
   double freq;
@@ -421,14 +421,18 @@ void CRadio::_run_rx( )
 
   //the first call to recv() will block this many seconds before receiving
   double timeout = delay_sec + 0.1; //timeout (delay before receive + padding)
-  boost::system_time next_console_refresh = boost::get_system_time();
+  boost::system_time next_refresh = boost::get_system_time();
   uhd::rx_metadata_t _md;
   size_t num_rx_samps;
-
+  //float pkt_time_intv_us = 1/_usrp->get_rx_rate( 0 ) * _spb * 1e6;
+ 
   while( _is_rx_streaming_on ) {
 
+    //if (boost::get_system_time() < next_refresh) continue;
+    //next_refresh = boost::get_system_time() + boost::posix_time::microseconds(long( pkt_time_intv_us  ));
+
     //receive multi channel buffers
-    num_rx_samps = _rx_stream->recv( _rx_mdst.buffer_ptr_idx(_rx_mdst._head ), _spb, _md, timeout);
+    num_rx_samps = _rx_stream->recv( _rx_mdst.buffer_ptr_idx(_rx_mdst.head() ), _spb, _md, timeout);
 
     if (num_rx_samps != _spb) {
       std::cerr << "!!";
@@ -451,11 +455,11 @@ void CRadio::_run_rx( )
     _rx_mdst._BufferTime.at( 0 ).frac_sec = _md.time_spec.get_frac_secs();
 
     // if storage buffers are full then drop from tail end 
-    if ( ((_rx_mdst._head + 1) % _rx_mdst.nbuffptrs() ) == _rx_mdst._tail)
-      _rx_mdst._tail = (_rx_mdst._tail + 1) % _rx_mdst.nbuffptrs();
+    if (_rx_mdst.head_next() == _rx_mdst.tail() )
+      _rx_mdst.tail_inc();
 
-    _rx_mdst._head++;
-    _rx_mdst._head = _rx_mdst._head % _rx_mdst.nbuffptrs();
+    _rx_mdst.head_inc();
+    //_rx_mdst._head = _rx_mdst._head % _rx_mdst.nbuffptrs();
 
   } // while()
 
@@ -662,7 +666,7 @@ void CRadio::_run_tx()
 
   //the first call to recv() will block this many seconds before receiving
   double timeout = delay_sec + 0.1; //timeout (delay before receive + padding)
-  boost::system_time next_console_refresh = boost::get_system_time();
+  //boost::system_time next_console_refresh = boost::get_system_time();
   boost::system_time next_refresh = boost::get_system_time();
 
   uhd::tx_metadata_t md;   //setup the metadata flags
@@ -671,12 +675,15 @@ void CRadio::_run_tx()
   md.has_time_spec  = true;
   md.time_spec = uhd::time_spec_t(0.1);
 
+  
+  float pkt_time_intv_us = 10; //1/_usrp->get_tx_rate( 0 ) * _spb * 1e6;
+
   while( _is_tx_streaming_on ) {
     
     if (boost::get_system_time() < next_refresh) continue;
-    next_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(50));
+    next_refresh = boost::get_system_time() + boost::posix_time::microseconds(long( pkt_time_intv_us  ));
 
-    if (_tx_mdst._head == 0) {
+    if (_tx_mdst.head() == 0) {
       _tx_stream->send((void*)zero_buf.data(), _spb, md);
       md.start_of_burst = false;
       md.has_time_spec = false;
@@ -684,7 +691,7 @@ void CRadio::_run_tx()
     }
 
     // send multi channel buffers to device
-    for (unsigned int idx = 0; idx < _tx_mdst._head; idx++)
+    for (unsigned int idx = 0; idx < _tx_mdst.head(); idx++)
     {
       _tx_stream->send(_tx_mdst.buffer_ptr_idx( idx ), _spb, md);
       md.start_of_burst = false;
@@ -692,7 +699,7 @@ void CRadio::_run_tx()
     }
     
     // Comment line below to keep sending sequence
-    _tx_mdst._head = 0;
+    _tx_mdst.head_set(0);
 
   } // while()
 
