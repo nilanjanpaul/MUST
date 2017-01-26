@@ -50,22 +50,47 @@ public:
     shm_unlink(shm_uid_.c_str());
   }
 
-  void init(std::string shm_uid, unsigned int sizeInBytes)
+
+  bool exist(std::string shm_uid)
+  {
+    bool rv;
+    struct stat sb;
+    std::string test_shm_str = "/dev/shm"+shm_uid;
+
+    rv = (stat(test_shm_str.c_str(), &sb) == -1) ? false : true;
+    return rv;
+  }
+
+  void attach(std::string shm_uid, unsigned int sizeInBytes)
   {
     isMaster_ = false;
     shm_uid_ = shm_uid;
     bytes_allocated_ = sizeInBytes;
 
-    //int shm_oflag = (isMaster_) ? shm_oflag = (O_CREAT | O_RDWR) : (O_RDWR);
+    /* Attach to shared memory object */
+    if ((fd_ = shm_open(shm_uid_.c_str(), /* O_CREAT | */O_RDWR, S_IRUSR | S_IWUSR)) == -1) {
+      std::cerr << "SHM - non-existent " << shm_uid << std::endl;
+      handle_error("open");
+    }
+    if (ftruncate(fd_, bytes_allocated_) == -1)
+      handle_error("ftruncate");
 
-    /* Create shared memory object and set its size - assume it already exisit */
-    if ((fd_ = shm_open(shm_uid_.c_str(), /*O_CREAT |*/ O_RDWR, S_IRUSR | S_IWUSR)) == -1) {
-      //handle_error("open");
+    /* Map shared memory object */
+    rptr_ = (void *) mmap(NULL, bytes_allocated_, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
+    if (rptr_ == MAP_FAILED)
+      exit(-1); /* Handle error */
+  }
 
-      /* create new shm - O_CREAT */
-      if ((fd_ = shm_open(shm_uid_.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) == -1)
-	handle_error("open");
-      isMaster_ = true;
+  void init(std::string shm_uid, unsigned int sizeInBytes)
+  {
+    isMaster_ = true;
+    shm_uid_ = shm_uid;
+    bytes_allocated_ = sizeInBytes;
+
+    /* Create shared memory object and set its size */
+    if ((fd_ = shm_open(shm_uid_.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) == -1) {
+      std::cerr << "SHM - non-existent " << shm_uid << std::endl;
+      handle_error("open");
     }
 
     if (ftruncate(fd_, bytes_allocated_) == -1)

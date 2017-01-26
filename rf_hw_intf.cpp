@@ -159,8 +159,8 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
 
   boost::this_thread::sleep(boost::posix_time::milliseconds(100));
 
-  unsigned int spb = usrp1.spb();
-  unsigned int nRxChannels = usrp1.nRxChannels();
+  unsigned int spb = rx_mdst.spb();
+  unsigned int nRxChannels = rx_mdst.nChannels();
 
   std::vector<float> mag_buff( spb );
   std::vector<std::complex<float> > fft_buff( spb );
@@ -300,14 +300,15 @@ void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int ru
 
       DBG_OUT(sample_corr_idx);
       
-      usrp1.plot_buffer("10.17.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 0, rx_mdst.tail(-2)), spb * 4);
-      //usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 1, rx_mdst._tail-2), spb * 4);
-      //usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 2, rx_mdst._tail-2), spb * 4);
+      //CRadio::plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 0, rx_mdst.tail(-2)), spb * 4);
+      usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 0, rx_mdst.tail(-2)), spb * 4);
+      usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 1, rx_mdst.tail(-2)), spb * 4);
+      usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 2, rx_mdst.tail(-2)), spb * 4);
       LOG4CXX_INFO(logger, "tail | head : " << rx_mdst.tail() << " " << rx_mdst.head() );;
 
 
       //usrp1.plot_rx("10.10.0.10", "1337", rx_mdst._tail-2, 4);
-      local_kill_switch = true;
+      //local_kill_switch = true;
       state = 0;
     }
    
@@ -483,16 +484,33 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 
       usrp1.init_rx();
 
-      // get reference to device streaming buffer
-      CDeviceStorage &rx_mdst = usrp1.rx_mdst();
+      // attach to streaming buffer memory structure
+      //CDeviceStorage &rx_mdst = usrp1.rx_mdst();
+      CDeviceStorage rx_mdst;
+      rx_mdst.attach_shm("/ShmMultiDeviceBufferRx");
+
       //unsigned int N_SPB_BUFFS = rx_mdst.nbuffptrs();
 
       usrp1.run_rx_async();  // non-blocking call spawns a receive thread
 
       // loca this from link
       //rx_handler_find_peaks(usrp1, rx_mdst, run_time); // move this into callback / timer object
-      rx_handler_find_idx(usrp1, rx_mdst, run_time);
 
+
+#if 0
+      rx_handler_find_idx(usrp1, rx_mdst, run_time);
+#else  // use split system
+      boost::system_time next_console_refresh = boost::get_system_time();
+      while(!local_kill_switch) {
+
+	if (boost::get_system_time() > next_console_refresh) {
+	  //count_processed_buffers = 0;
+	  next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
+	  std::cerr << ".";
+	}
+
+      } // while (true)
+#endif
       usrp1.kill_rx();
       boost::this_thread::sleep(boost::posix_time::milliseconds(250));
 
@@ -532,7 +550,11 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 
       usrp1.init_tx();
       
-      CDeviceStorage &tx_mdst = usrp1.tx_mdst();
+      // attach to streaming buffer memory structure
+      //CDeviceStorage &tx_mdst = usrp1.tx_mdst();
+      CDeviceStorage tx_mdst;
+      tx_mdst.attach_shm("/ShmMultiDeviceBufferTx");
+
       unsigned int N_SPB_BUFFS = tx_mdst.nbuffptrs();
 
       usrp1.run_tx_async();  // non-blocking call spawns a transmit thread thread
@@ -545,7 +567,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	// copy sync to tx_mdst buffers at idx = 0
 	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
 	  // replicate signal to all (N_SPB_BUFFS) buffers per chan
-	  for (unsigned int idx = 0; idx < 2; idx++) {
+	  for (unsigned int idx = 0; idx < 1; idx++) {
 	    memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
 		   (void*)tx_sync.data(), usrp1.spb() * sizeof(std::complex<float>) );
 	  }
@@ -554,7 +576,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	// copy signal to tx_mdst buffers at idx = 1.. N_SPB_BUFFS
 	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
 	  // replicate signal to all (N_SPB_BUFFS) buffers per chan
-	  for (unsigned int idx = 2; idx < N_SPB_BUFFS; idx++) {
+	  for (unsigned int idx = 1; idx < N_SPB_BUFFS; idx++) {
 	    memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
 		   (void*)tx_signal.data(), usrp1.spb() * sizeof(std::complex<float>) );
 	  }

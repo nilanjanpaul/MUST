@@ -455,11 +455,10 @@ void CRadio::_run_rx( )
     _rx_mdst._BufferTime.at( 0 ).frac_sec = _md.time_spec.get_frac_secs();
 
     // if storage buffers are full then drop from tail end 
-    if (_rx_mdst.head_next() == _rx_mdst.tail() )
-      _rx_mdst.tail_inc();
+    if (_rx_mdst.head( +1 ) == _rx_mdst.tail(  ) )
+      _rx_mdst.tail_inc( );
 
-    _rx_mdst.head_inc();
-    //_rx_mdst._head = _rx_mdst._head % _rx_mdst.nbuffptrs();
+    _rx_mdst.head_inc( );
 
   } // while()
 
@@ -633,6 +632,7 @@ void CRadio::init_tx()
   // =====================================================================================
   _tx_mdst.shared_memory( "/ShmMultiDeviceBufferTx");;
   _tx_mdst.init( _nTxChannels , _spb, TX_DEV_STORAGE_N_SPB_BUFFS);
+
   _tx_mdst.print_info();
   _isTxInit = true;
 

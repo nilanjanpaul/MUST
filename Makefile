@@ -1,4 +1,4 @@
-all : rf_hw_intf #multi_simple 
+all : rf_hw_intf sigproc #multi_simple 
 
 CFLAGS=-O3
 HOST="node1-1"
@@ -13,6 +13,11 @@ rf_hw_intf : rf_hw_intf.cpp CTimer.cpp CTimer.h CRadio.hpp CDeviceStorage.hpp CS
 	g++ -c rf_hw_intf.cpp
 	g++ -c CTimer.cpp
 	g++ -o rf_hw_intf rf_hw_intf.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -luhd -lpugixml -lfftw3f -llog4cxx -lrt
+
+sigproc : sigproc.cpp CTimer.cpp CTimer.h CRadio.hpp CDeviceStorage.hpp CSharedMemSimple.hpp UDPSimple.hpp
+	g++ -c sigproc.cpp
+	g++ -c CTimer.cpp
+	g++ -o sigproc sigproc.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -lpugixml -lfftw3f -llog4cxx -lrt -lpthread
 
 clean :
 	rm multi_xml *.o
