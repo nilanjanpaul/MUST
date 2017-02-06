@@ -14,14 +14,18 @@
 class CWriteOml
 {
   private:
-    unsigned int mMeasurementPoints;
-    unsigned int mIdxNull;
-    unsigned int _mp_idx;
+    unsigned int _MeasurementPoints;
     std::string mHostName;
+    OmlValueU* _values;
+
+    std::map<std::string, std::pair<OmlValueT, OmlValueU*> >            _KTVMap;
+    std::map<std::string, std::pair<OmlValueT, OmlValueU*> >::iterator  _KTVMapIter;
+
 
     OmlMPDef* mp_def;
-    OmlMP* mp;
-
+    OmlMP* _mp_handle;
+    std::string _db_filename;
+    std::string _server_name;
 
     void createMeasurementPoint(OmlMPDef* pOmlMPDef, std::string str, OmlValueT type);
 
@@ -33,33 +37,29 @@ class CWriteOml
       omlc_close();
     }
 
-
     void CWriteOML(std::string db_filename, std::string server_name)
     {
       init(db_filename, server_name);
     }    
 
     void init(std::string db_filename, std::string server_name);
-    void start();
 
-    void insert(uint32_t samp, float cf, uint32_t gain, uint32_t len, uint32_t channel, uint32_t peakidx, float peakMag, float estimate_cf)
+
+    void start( std::vector< std::pair<std::string, OmlValueT> >& oml_key_list );
+
+
+    void set_key(std::string key_str, void* val_ptr);
+
+
+    void insert()
     {
-      // Modify here
-      OmlValueU values[mMeasurementPoints];
-      omlc_set_long   (values[0], samp);
-      omlc_set_double (values[1], cf);
-      omlc_set_long   (values[2], gain);
-      omlc_set_long   (values[3], len);
-      omlc_set_long   (values[4], channel);
-      omlc_set_long   (values[5], peakidx);
-      omlc_set_double (values[6], peakMag);
-      omlc_set_double (values[7], estimate_cf);
-      omlc_inject (mp, values);
+      omlc_inject (_mp_handle, _values);
     }
 
     void stop()
     {
       omlc_close();
+      free(_values);
     }
 
 
@@ -68,9 +68,13 @@ class CWriteOml
 
 void CWriteOml::init(std::string db_filename, std::string server_name)
 {
+  _db_filename = db_filename;
+  _server_name = server_name;
+
   std::string fname;
   int argc;
   const char** argv;
+  std::vector<char*> arg_vector;
 
   //char chostname[32];
   //for (int i = 0; i < 32;++i)
@@ -81,51 +85,58 @@ void CWriteOml::init(std::string db_filename, std::string server_name)
   std::string mode(server_name.c_str());
 
   if (mode == "file")
-    {
-      fname = db_filename;//  + "_" +  mHostName;
-      std::cout << fname << std::endl;
-      argc = 7;
-      const char* argv_file[] = {"./spectrum", "--oml-id",(const char*)"et", "--oml-exp-id",db_filename.c_str(), "--oml-file",fname.c_str()};
-      argv = argv_file;
-    }
+ {
+   fname = db_filename;//  + "_" +  mHostName;
+   std::cout << fname << std::endl;
+   argc = 7;
+   const char* argv_file[] = {"./spectrum", "--oml-id",(const char*)"et", "--oml-exp-id",db_filename.c_str(), "--oml-file",fname.c_str()};
+   argv = argv_file;
+  }
   else
-    {
-      argc = 7;
-      const char* argv_server[] = {"./spectrum", "--oml-id",(const char*)"et", "--oml-domain",db_filename.c_str(), "--oml-collect", server_name.c_str()
-      };
-      argv = argv_server;
-    }
+  {
+    // Following two lines were being optimized out
+    //const char* argv_server[] = {"./spectrum", "--oml-id",(const char*)"et", "--oml-domain",db_filename.c_str(), "--oml-collect", server_name.c_str() };
+    //argv = argv_server;
 
-  int result = omlc_init ("frequency_offset_measurement_app", &argc, argv, NULL);
+    arg_vector.push_back((char*)"./spectrum");
+    arg_vector.push_back((char*)"--oml-id");
+    arg_vector.push_back((char*)"et");
+    arg_vector.push_back((char*)"--oml-domain");
+    arg_vector.push_back((char*)db_filename.c_str());
+    arg_vector.push_back((char*)"--oml-collect");
+    arg_vector.push_back((char*)server_name.c_str());
+    argv = (const char**)&arg_vector[0];
+
+    argc = arg_vector.size(); // argc = 7;
+
+  }
+
+  int result = omlc_init ("_mp_", &argc, argv, NULL);
   if (result == -1) {
     std::cerr << "Could not initialize OML\n";
     exit (1);
   }
 
-  _mp_idx = 0;
 }
 
-void CWriteOml::start()
+
+void CWriteOml::start( std::vector<std::pair<std::string, OmlValueT> >& _OmlKeys )
 {
   int result;
-  mMeasurementPoints = 8; // Modify this
 
-  mp_def = new OmlMPDef [(sizeof(OmlMPDef) * (mMeasurementPoints + 1) )];
+  _MeasurementPoints = _OmlKeys.size();
 
-  // Modify here
-  createMeasurementPoint(&mp_def[_mp_idx++],    "sampling",    (OmlValueT)OML_INT32_VALUE);
-  createMeasurementPoint(&mp_def[_mp_idx++],    "cfreq_MHz",   (OmlValueT)OML_DOUBLE_VALUE);
-  createMeasurementPoint(&mp_def[_mp_idx++],    "gain_dB",     (OmlValueT)OML_INT32_VALUE);
-  createMeasurementPoint(&mp_def[_mp_idx++],    "FFTLength",   (OmlValueT)OML_INT32_VALUE);
-  createMeasurementPoint(&mp_def[_mp_idx++],    "Channel",     (OmlValueT)OML_INT32_VALUE);
-  createMeasurementPoint(&mp_def[_mp_idx++],    "PeakIdx",     (OmlValueT)OML_INT32_VALUE);
-  createMeasurementPoint(&mp_def[_mp_idx++],    "PeakMag",     (OmlValueT)OML_DOUBLE_VALUE);
-  createMeasurementPoint(&mp_def[_mp_idx++],    "Estimate",    (OmlValueT)OML_DOUBLE_VALUE);
-  createMeasurementPoint(&mp_def[_mp_idx],      "NULL",        (OmlValueT)0);
+  mp_def = new OmlMPDef [(sizeof(OmlMPDef) * (_MeasurementPoints + 1) )];
 
-  mp = omlc_add_mp ("peak_bin_detected_stat", mp_def);
+  // define measurement points
+  unsigned int idx;
+  for (idx = 0; idx < _MeasurementPoints; ++idx)
+    createMeasurementPoint(&mp_def[idx], _OmlKeys.at(idx).first, (OmlValueT)_OmlKeys.at(idx).second);
+  createMeasurementPoint(&mp_def[idx],      "NULL",        (OmlValueT)0);
 
-  if (mp == NULL) {
+  _mp_handle = omlc_add_mp (_db_filename.c_str(), mp_def); // using db_filename as tag name for measurement point
+
+  if (_mp_handle == NULL) {
     std::cerr << "Error: could not register Measurement Point \"data\"";
     exit (1);
   }
@@ -135,9 +146,58 @@ void CWriteOml::start()
     std::cerr << "Error starting up OML measurement streams\n";
     exit (1);
   }
+
+  // allocate memory measurement points
+  _values = (OmlValueU*) malloc(sizeof(OmlValueU) * _MeasurementPoints);
+
+  // create oml key <==> (type,value) mapping
+  _KTVMap.clear();
+  for (unsigned int idx = 0; idx < _MeasurementPoints; ++idx) {
+    std::pair<OmlValueT, OmlValueU*> TV (_OmlKeys.at(idx).second, (OmlValueU*)&_values[idx] );
+    
+    std::pair<std::string, std::pair<OmlValueT, OmlValueU*> > KTV( _OmlKeys.at(idx).first, TV );
+    _KTVMap.insert( KTV );
+  }
+
 }
 
 
+void CWriteOml::set_key(std::string key_str, void* val_ptr)
+{
+
+  _KTVMapIter = _KTVMap.find(key_str);
+  if (_KTVMapIter == _KTVMap.end()) {
+    std::cerr << key_str << " not found" << std::endl;
+    return;  // key not found so return and do nothing
+  }
+
+  //key found to look at type are call appropriate oml intrinsic function
+  std::pair<OmlValueT, OmlValueU*> TV = _KTVMapIter->second;
+  switch( TV.first ) {
+  case OML_INT32_VALUE :
+    omlc_set_int32   ( *(TV.second), (int32_t) (*((int32_t*)val_ptr)));
+    break;
+
+  case OML_UINT32_VALUE :
+    omlc_set_uint32   ( *(TV.second), (uint32_t) (*((uint32_t*)val_ptr)));
+    break;
+
+  case OML_INT64_VALUE :
+    omlc_set_int64   ( *(TV.second), (int64_t) (*((int64_t*)val_ptr)));
+    break;
+  case OML_DOUBLE_VALUE :
+    omlc_set_double   ( *(TV.second), (double) (*((double*)val_ptr)));
+    break;
+
+    // add other cases here
+
+  default :
+    std::cerr << "OML - unrecognizeg type, value: " << TV.first << " , " << TV.second << std::endl;
+    break;
+  }
+
+  return;
+}
 
 void CWriteOml::createMeasurementPoint(OmlMPDef* pOmlMPDef, std::string str, OmlValueT type)
 {

@@ -14,10 +14,10 @@ rf_hw_intf : rf_hw_intf.cpp CTimer.cpp CTimer.h CRadio.hpp CDeviceStorage.hpp CS
 	g++ -c CTimer.cpp
 	g++ -o rf_hw_intf rf_hw_intf.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -luhd -lpugixml -lfftw3f -llog4cxx -lrt
 
-sigproc : sigproc.cpp CTimer.cpp CTimer.h CRadio.hpp CDeviceStorage.hpp CSharedMemSimple.hpp UDPSimple.hpp
-	g++ -c sigproc.cpp
-	g++ -c CTimer.cpp
-	g++ -o sigproc sigproc.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -lpugixml -lfftw3f -llog4cxx -lrt -lpthread
+sigproc : sigproc.cpp CTimer.cpp CTimer.h CRadio.hpp CDeviceStorage.hpp CSharedMemSimple.hpp UDPSimple.hpp CWriteOml.h TCPSimple.hpp
+	g++ -c sigproc.cpp $(CFLAGS)
+	g++ -c CTimer.cpp $(CFLAGS)
+	g++ -o sigproc sigproc.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -lfftw3f -llog4cxx -lrt -lpthread -loml2
 
 clean :
 	rm multi_xml *.o

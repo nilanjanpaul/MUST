@@ -469,19 +469,6 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       DBG_OUT( usrp1.nRxChannels() );
       DBG_OUT( usrp1.spb() );
 
-      if (vm.count("sync")) {
-	std::vector<std::string> tokens;
-	boost::split(tokens, sync_samps_str, boost::is_any_of("| "), boost::token_compress_on);
-	for (unsigned int i = 0; i < tokens.size() ; i++) {
-	  std::complex<float> cf = boost::lexical_cast<std::complex<float> >( tokens.at(i) );
-	  t_sync_ref.push_back(cf);
-	  //std::cout << tokens.at(i) << " " << cf << std::endl;
-	}
-	assert(tokens.size() == t_sync_ref.size() );
-	assert(t_sync_ref.size() == usrp1.spb() );
-      }
-
-
       usrp1.init_rx();
 
       // attach to streaming buffer memory structure
@@ -532,7 +519,6 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	}
 	assert(tokens.size() == tx_sync.size() );
 	assert(tx_sync.size() == usrp1.spb() );
-
       }
 
       std::vector<std::complex<float> > tx_signal;
@@ -643,8 +629,8 @@ std::string command_parse (std::vector<char> command)
     for (unsigned int i = 0; i < usrp1.nRxChannels(); i++)
     {
       double act_val = usrp1.rx_freq(i, set_val);
-      std::string s = "rxfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
-      temp += s + " ";
+      std::string s = "rxfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + "\n";
+      temp += s;
       LOG4CXX_INFO(logger, s);
     } 
   }
@@ -653,8 +639,8 @@ std::string command_parse (std::vector<char> command)
     for (unsigned int i = 0; i < usrp1.nRxChannels(); i++)
     {
       double act_val = usrp1.rx_freq(i);
-      std::string s = "rxfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
-      temp += s + " ";
+      std::string s = "rxfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + "\n";
+      temp += s;
       LOG4CXX_INFO(logger, s);
     } 
   }
@@ -663,8 +649,8 @@ std::string command_parse (std::vector<char> command)
     for (unsigned int i = 0; i < usrp1.nRxChannels(); i++)
     {
       double act_val = usrp1.rx_gain(i, set_val);
-      std::string s = "rxfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
-      temp += s + " ";
+      std::string s = "rxgain " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + "\n";
+      temp += s;
       LOG4CXX_INFO(logger, s);
     } 
   }
@@ -672,20 +658,47 @@ std::string command_parse (std::vector<char> command)
     for (unsigned int i = 0; i < usrp1.nRxChannels(); i++)
     {
       double act_val = usrp1.rx_gain(i);
-      std::string s = "rxgain " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
-      temp += s + " ";
+      std::string s = "rxgain " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + "\n";
+      temp += s;
       LOG4CXX_INFO(logger, s);
     } 
 
   }
+  else if ( (sToken.size() == 2) && (sToken.at(0) == "rxrate") && (sToken.at(1) == "all")) {
+    for (unsigned int i = 0; i < usrp1.nRxChannels(); i++)
+    {
+      double act_val = usrp1.rx_rate(i);
+      std::string s = "rxrate " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + "\n";
+      temp += s;
+      LOG4CXX_INFO(logger, s);
+    } 
+
+  }
+
+  else if ( (sToken.size() == 2) && (sToken.at(0) == "rxchan") && (sToken.at(1) == "all")) {
+    for (unsigned int i = 0; i < usrp1.nRxChannels(); i++)
+    {
+      double freq_val = usrp1.rx_freq(i);
+      double rate_val = usrp1.rx_rate(i);
+      double gain_val = usrp1.rx_gain(i);
+      std::string s = "rxchan " + boost::lexical_cast<std::string>(i) + " " \
+	                        + boost::lexical_cast<std::string>(freq_val) + " " \
+	                        + boost::lexical_cast<std::string>(rate_val) + " " \
+	                        + boost::lexical_cast<std::string>(gain_val) + "\n";
+      temp += s;
+      LOG4CXX_INFO(logger, s);
+    } 
+
+  }
+
 
   else if ( (sToken.size() == 3) && (sToken.at(0) == "txfreq") && (sToken.at(1) == "all")) {
     double set_val = boost::lexical_cast<double>( sToken.at(2) );
     for (unsigned int i = 0; i < usrp1.nTxChannels(); i++)
     {
       double act_val = usrp1.tx_freq(i, set_val);
-      std::string s = "txfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
-      temp += s + " ";
+      std::string s = "txfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + "\n";
+      temp += s;
       LOG4CXX_INFO(logger, s);
     } 
   }
@@ -694,8 +707,8 @@ std::string command_parse (std::vector<char> command)
     for (unsigned int i = 0; i < usrp1.nTxChannels(); i++)
     {
       double act_val = usrp1.tx_freq(i);
-      std::string s = "txfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
-      temp += s + " ";
+      std::string s = "txfreq " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + "\n";
+      temp += s;
       LOG4CXX_INFO(logger, s);
     } 
   }
@@ -704,8 +717,8 @@ std::string command_parse (std::vector<char> command)
     for (unsigned int i = 0; i < usrp1.nTxChannels(); i++)
     {
       double act_val = usrp1.tx_gain(i, set_val);
-      std::string s = "txgain " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
-      temp += s + " ";
+      std::string s = "txgain " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + "\n";
+      temp += s;
       LOG4CXX_INFO(logger, s);
     } 
   }
@@ -714,8 +727,8 @@ std::string command_parse (std::vector<char> command)
     for (unsigned int i = 0; i < usrp1.nTxChannels(); i++)
     {
       double act_val = usrp1.tx_gain(i);
-      std::string s = "txgain " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + " ";
-      temp += s + " ";
+      std::string s = "txgain " + boost::lexical_cast<std::string>(i) + " " + boost::lexical_cast<std::string>(act_val) + "\n";
+      temp += s;
       LOG4CXX_INFO(logger, s);
     } 
   }
@@ -750,16 +763,14 @@ void command_session(socket_ptr sock)
       sock->read_some(boost::asio::buffer( command ), error); // wait for the client to query
       if(error == boost::asio::error::eof)
       {
-        //LOG4CXX_INFO(logger, "Connection closed");
+        LOG4CXX_INFO(logger, "Connection closed");
         break;
       }
       else if(error)
-        throw boost::system::system_error(error);
-
+	throw boost::system::system_error(error);
       //LOG4CXX_INFO(logger, (char*)&command.front());
 
       std::string resp;
-      resp = "Rsp: " ;
       resp += command_parse(command);
       resp += "\r\n";
 

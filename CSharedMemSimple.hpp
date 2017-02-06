@@ -69,7 +69,7 @@ public:
 
     /* Attach to shared memory object */
     if ((fd_ = shm_open(shm_uid_.c_str(), /* O_CREAT | */O_RDWR, S_IRUSR | S_IWUSR)) == -1) {
-      std::cerr << "SHM - non-existent " << shm_uid << std::endl;
+      std::cerr << "SHM - error on attach, non-existent " << shm_uid << std::endl;
       handle_error("open");
     }
     if (ftruncate(fd_, bytes_allocated_) == -1)
@@ -89,7 +89,7 @@ public:
 
     /* Create shared memory object and set its size */
     if ((fd_ = shm_open(shm_uid_.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) == -1) {
-      std::cerr << "SHM - non-existent " << shm_uid << std::endl;
+      std::cerr << "SHM - error on create, unable to make " << shm_uid << std::endl;
       handle_error("open");
     }
 

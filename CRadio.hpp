@@ -63,8 +63,6 @@ class CRadio
 
     CDeviceStorage _rx_mdst;
     CDeviceStorage _tx_mdst;
-  //DeviceStorageType _rx_mdst; // this should go on heap or convert to SHM class
-  //DeviceStorageType _tx_mdst; // this should go on heap or convert to SHM class
 
     void _run_rx();
     void _run_tx();
@@ -76,8 +74,8 @@ class CRadio
     void init_rx();
     void init_tx();
 
-    CDeviceStorage& rx_mdst() { return _rx_mdst; } 
-    CDeviceStorage& tx_mdst() { return _tx_mdst; } 
+  //CDeviceStorage& rx_mdst() { return _rx_mdst; } 
+  //CDeviceStorage& tx_mdst() { return _tx_mdst; } 
 
     void run_rx_async( );
     void kill_rx() { _is_rx_streaming_on = false; }
@@ -451,8 +449,7 @@ void CRadio::_run_rx( )
 
     if (_is_rx_pause_on) continue;
 
-    _rx_mdst._BufferTime.at( 0 ).full_sec = _md.time_spec.get_full_secs();
-    _rx_mdst._BufferTime.at( 0 ).frac_sec = _md.time_spec.get_frac_secs();
+    _rx_mdst.time( _md.time_spec.get_full_secs(), _md.time_spec.get_frac_secs());
 
     // if storage buffers are full then drop from tail end 
     if (_rx_mdst.head( +1 ) == _rx_mdst.tail(  ) )

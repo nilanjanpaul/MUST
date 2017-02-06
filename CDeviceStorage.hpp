@@ -5,6 +5,12 @@
 
 #define DBG_OUT(x) std::cerr << #x << " = " << x << std::endl
 
+
+struct _s_DeviceBufferTimeType {
+  double full_sec;
+  double frac_sec;
+};
+
 struct _s_DeviceBufferFormatType {
   unsigned int nbuffptrs;
   unsigned int nsamps_per_ch;
@@ -14,11 +20,9 @@ struct _s_DeviceBufferFormatType {
   // _head and _tail used for indexing _MultiDeviceBufferPtrs - range is [0, _nbuffptrs)
   unsigned int head;       // index into next _MultiDeviceBufferPtrs for writing
   unsigned int tail;       // index into oldest _MultiDeviceBufferPtrs for reading
-};
 
-struct _s_DeviceBufferTimeType {
-  double full_sec;
-  double frac_sec;
+  struct _s_DeviceBufferTimeType time;
+
 };
 
 
@@ -43,13 +47,11 @@ private:
 public:
 
   //MultiDeviceBufferType _MultiDeviceWasteBuffer;
-  std::vector<struct _s_DeviceBufferTimeType> _BufferTime;
   
   // constructor
   CDeviceStorage()
   {
     _use_shared_memory = false;
-    _BufferTime.clear();
     _MultiDeviceBufferPtrs.clear();
     _MultiDeviceBuffer.clear();
   }
@@ -75,8 +77,6 @@ public:
 
   void head_set(unsigned int i) { _mp->head = i; }                          // set head to new offset
   void tail_set(unsigned int i) { _mp->tail = i; }                          // set tail to new offset
-
-
 
   void shared_memory(std::string shm_uid)
   {
@@ -120,9 +120,6 @@ public:
       _mp->spb = spb;
       _mp->nsamps_per_ch = _mp->spb * _mp->nbuffptrs;
 
-      _BufferTime.resize(num_buff_ptrs);
-      assert( _BufferTime.size() == _BufferTime.capacity() );
-
       _ShmBuffer.init(_shm_uid, _mp->nChannels * _mp->nsamps_per_ch * sizeof( std::complex<float> ) );
       for (size_t j = 0; j < _mp->nbuffptrs; j++)  {
 	BufferPointerType bptr; // each bptr points to samps_per_buff amount of memory in _MultiDeviceBuffer
@@ -140,9 +137,6 @@ public:
       _mp->nChannels = nChannels;
       _mp->spb = spb;
       _mp->nsamps_per_ch = _mp->spb * _mp->nbuffptrs;
-
-      _BufferTime.resize(num_buff_ptrs);
-      assert( _BufferTime.size() == _BufferTime.capacity() );
 
       for (unsigned int i = 0; i < _mp->nChannels; i++)
 	_MultiDeviceBuffer.push_back( std::vector<std::complex<float> >(_mp->nsamps_per_ch) );
@@ -168,10 +162,15 @@ public:
 
   } // end of init
 
+  void time(double full_sec, double frac_sec)
+  {
+    _mp->time.full_sec = full_sec;
+    _mp->time.frac_sec = frac_sec;
+  }
+
   void print_time()
   {
-    unsigned int idx = 0;//_head; // head may be updated
-    std::cerr << "[" << _BufferTime.at(idx).full_sec + _BufferTime.at(idx).frac_sec << "] " << std::endl;
+    std::cerr << "[" << _mp->time.full_sec + _mp->time.frac_sec << "] " << std::endl;
   }
 
   BufferPointerType buffer_ptr_idx(unsigned int idx)  { return _MultiDeviceBufferPtrs.at(idx); }
