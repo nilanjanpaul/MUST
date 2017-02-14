@@ -149,6 +149,7 @@ void CWriteOml::start( std::vector<std::pair<std::string, OmlValueT> >& _OmlKeys
 
   // allocate memory measurement points
   _values = (OmlValueU*) malloc(sizeof(OmlValueU) * _MeasurementPoints);
+  memset((void*)_values, 0, sizeof(OmlValueU) * _MeasurementPoints );
 
   // create oml key <==> (type,value) mapping
   _KTVMap.clear();
@@ -188,7 +189,9 @@ void CWriteOml::set_key(std::string key_str, void* val_ptr)
   case OML_DOUBLE_VALUE :
     omlc_set_double   ( *(TV.second), (double) (*((double*)val_ptr)));
     break;
-
+  case OML_STRING_VALUE :
+    omlc_set_string( *(TV.second), (char*)val_ptr);
+    break;
     // add other cases here
 
   default :

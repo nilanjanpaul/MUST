@@ -416,7 +416,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
         ("time", po::value<unsigned int>(&run_time)->default_value(10), "run time in seconds")
         ("sync", po::value<std::string>(&sync_samps_str), "cf32 sync signal")
         ("sig", po::value<std::string>(&sig_samples_str), "cf32 samples")
-        ("intv", po::value<unsigned int>(&delay_ms)->default_value(2000), "transmit interval between signal burst")
+        ("intv", po::value<unsigned int>(&delay_ms)->default_value(2000), "transmit interval (ms) between signal burst")
         ("rx-only", "enable receive side only")
         ("tx-only", "enable transmit side only")
         ("cmd-port", po::value<short>(&command_server_port)->default_value(5180),"command server port")
@@ -485,7 +485,9 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 
 
 #if 0
-      rx_handler_find_idx(usrp1, rx_mdst, run_time);
+      //rx_handler_find_idx(usrp1, rx_mdst, run_time);
+      rx_handler_find_avg_bw_pwr(rx_mdst, run_time)
+
 #else  // use split system
       boost::system_time next_console_refresh = boost::get_system_time();
       while(!local_kill_switch) {
@@ -579,6 +581,28 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 	  }
 	}
       }
+      else
+      {
+	std::vector<std::vector<std::complex<float> > > signal( usrp1.nTxChannels(), std::vector<std::complex<float> >(usrp1.spb() ));
+
+	int my_i[]   = {16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240};
+	float my_m[] = {.1, .1, .1, .1, .1, .1,  .1,  .1,  .1,  .1,  .1,  .1,  .1,  .1,  .1}; 
+	std::vector<unsigned int> bin_vec(my_i, my_i + sizeof(my_i) / sizeof(int) );
+	std::vector<float>        mag_vec(my_m, my_m + sizeof(my_m) / sizeof(float) );
+	multi_tone_1_256(bin_vec, mag_vec, signal.at(0));
+	//usrp1.plot_buffer("10.10.0.10", "1337", signal.at(0).data(), usrp1.spb());
+
+	// copy signal to tx_mdst buffers for sending 
+	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
+	  // replicate signal to all (N_SPB_BUFFS) buffers per chan
+	  for (unsigned int idx = 0; idx < N_SPB_BUFFS; idx++) {
+	    memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
+		   (void*)signal.at(ch).data(), usrp1.spb() * sizeof(std::complex<float>) );
+	  }
+	}
+
+      }
+
 
       while( !local_kill_switch ) { 
 	if (tx_mdst.head() != 0) continue;
@@ -805,17 +829,6 @@ void command_server(short port)
     //LOG4CXX_INFO(logger, "command thread count: " << nCmdThreadCnt << " [host: " << sock->remote_endpoint().address().to_string() << "]" );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 #if 0

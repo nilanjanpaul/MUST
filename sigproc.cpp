@@ -60,8 +60,6 @@ void plot_cf32_buffer(std::string udp_dst_addr, std::string port, void *ptr_cf32
     ptr_to_buffer += num_samps_per_datagram;
     //boost::this_thread::sleep(boost::posix_time::milliseconds(10));
   }
-
-
 }
 
 LoggerPtr logger(Logger::getLogger("sigproc")); // replace with name of this file
@@ -119,27 +117,31 @@ void rx_handler_find_avg_bw_pwr(CDeviceStorage& rx_mdst, unsigned int run_time)
 
 
 #if 1
-  //  OML writer set up
+  //  OML writer - data base initialization
   CWriteOml OML;
   std::string omlDbFilename("measured_avg_bw_pwr");
   std::string omlServerName("oml:3003");
   OML.init(omlDbFilename, omlServerName );
 
+  //  OML writer - create keys with associated type
   std::vector< std::pair<std::string, OmlValueT> > _omlKeys;
   _omlKeys.push_back( std::make_pair("sampling",    OML_DOUBLE_VALUE) );
   _omlKeys.push_back( std::make_pair("cfreq_MHz",   OML_DOUBLE_VALUE) );
   _omlKeys.push_back( std::make_pair("gain_dB",     OML_DOUBLE_VALUE));
   _omlKeys.push_back( std::make_pair("FFTLength",   OML_INT32_VALUE));
+  //_omlKeys.push_back( std::make_pair("nRxChannels", OML_INT32_VALUE));
   _omlKeys.push_back( std::make_pair("Channel",     OML_INT32_VALUE));
   _omlKeys.push_back( std::make_pair("AvgPwr",     OML_DOUBLE_VALUE));
   _omlKeys.push_back( std::make_pair("ExecTime",    OML_DOUBLE_VALUE));
   OML.start( _omlKeys );
 
+
+  //  OML writer - assign key value
   OML.set_key("sampling", (void*)&rate );
   OML.set_key("cfreq_MHz", (void*)&freq );
   OML.set_key("gain_dB", (void*)&gain );
-
   OML.set_key("FFTLength", (void*)&total_num_samps);
+  //OML.set_key("nRxChannels", (void*)&nRxChannels);
 
   //double estimate = -99.0;
   //OML.set_key("ExecTime", (void*)&estimate);
@@ -212,14 +214,16 @@ void rx_handler_find_avg_bw_pwr(CDeviceStorage& rx_mdst, unsigned int run_time)
 #endif
 
 #if 1
+      //  OML writer - assign key value
       OML.set_key("Channel", (void*)&ch);
       OML.set_key("AvgPwr", (void*)&log_pwr);
-
+      
+      //  OML writer - insert into database
       OML.insert();
 #endif
     } // for loop channels
 
-  } // while
+  } // while ((!local_kill_switch) && (boost::get_system_time() < done_time))
 
 }
 
@@ -466,24 +470,14 @@ int main(int argc, char *argv[])
   //plot_cf32_buffer("10.10.0.10", "1337", t_sync_ref.data(), t_sync_ref.size() );
   //return ~0;
   //
-
-  //rx_handler_find_signal_start_idx(rx_mdst, run_time);
-  rx_handler_find_avg_bw_pwr(rx_mdst, run_time);
-
-#if 0
-  boost::system_time next_console_refresh = boost::get_system_time();
-
-  unsigned int count_processed_buffers = 0;
-  while(!local_kill_switch) {
-
-    if (boost::get_system_time() > next_console_refresh) {
-      count_processed_buffers = 0;
-      next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
-      std::cerr << ".";
-    }
-
-  } // while (true)
+#ifdef COMPILE_SIG_START_IDX
+  rx_handler_find_signal_start_idx(rx_mdst, run_time);
 #endif
+
+#ifdef COMPILE_AVG_BW_PWR
+  rx_handler_find_avg_bw_pwr(rx_mdst, run_time);
+#endif
+
 
   std::cerr << "Done!" << std::endl;
   return ~0;
