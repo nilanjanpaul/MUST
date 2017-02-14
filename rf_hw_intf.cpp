@@ -480,25 +480,23 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 
       usrp1.run_rx_async();  // non-blocking call spawns a receive thread
 
-      // loca this from link
-      //rx_handler_find_peaks(usrp1, rx_mdst, run_time); // move this into callback / timer object
-
-
 #if 0
       //rx_handler_find_idx(usrp1, rx_mdst, run_time);
       rx_handler_find_avg_bw_pwr(rx_mdst, run_time)
 
 #else  // use split system
+
+      // Back ground loop
       boost::system_time next_console_refresh = boost::get_system_time();
       while(!local_kill_switch) {
 
 	if (boost::get_system_time() > next_console_refresh) {
 	  //count_processed_buffers = 0;
-	  next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
+	  next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1000e3));
 	  std::cerr << ".";
 	}
 
-      } // while (true)
+      } //  while(!local_kill_switch)
 #endif
       usrp1.kill_rx();
       boost::this_thread::sleep(boost::posix_time::milliseconds(250));
@@ -509,33 +507,6 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       DBG_OUT( usrp1.nTxChannels() );
       DBG_OUT( usrp1.spb() );
 
-      // parse samples from command line
-      std::vector<std::complex<float> > tx_sync;
-      if (vm.count("sync")) {
-	std::vector<std::string> tokens;
-	boost::split(tokens, sync_samps_str, boost::is_any_of("| "), boost::token_compress_on);
-	for (unsigned int i = 0; i < tokens.size() ; i++) {
-	  std::complex<float> cf = boost::lexical_cast<std::complex<float> >( tokens.at(i) );
-	  tx_sync.push_back(cf);
-	  //std::cout << tokens.at(i) << " " << cf << std::endl;
-	}
-	assert(tokens.size() == tx_sync.size() );
-	assert(tx_sync.size() == usrp1.spb() );
-      }
-
-      std::vector<std::complex<float> > tx_signal;
-      if (vm.count("sig")) {
-	std::vector<std::string> tokens;
-	boost::split(tokens, sig_samples_str, boost::is_any_of("| "), boost::token_compress_on);
-	for (unsigned int i = 0; i < tokens.size() ; i++) {
-	  std::complex<float> cf = boost::lexical_cast<std::complex<float> >( tokens.at(i) );
-	  tx_signal.push_back(cf);
-	  //std::cout << tokens.at(i) << " " << cf << std::endl;
-	}
-	assert(tokens.size() == tx_signal.size() );
-	assert(tx_signal.size() == usrp1.spb() );
-      }
-
       usrp1.init_tx();
       
       // attach to streaming buffer memory structure
@@ -543,87 +514,30 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       CDeviceStorage tx_mdst;
       tx_mdst.attach_shm("/ShmMultiDeviceBufferTx");
 
-      unsigned int N_SPB_BUFFS = tx_mdst.nbuffptrs();
+      //unsigned int N_SPB_BUFFS = tx_mdst.nbuffptrs();
 
       usrp1.run_tx_async();  // non-blocking call spawns a transmit thread thread
 
 
-      //boost::system_time next_update = boost::get_system_time();
+      // Back ground loop
+      boost::system_time next_console_refresh = boost::get_system_time();
+      while(!local_kill_switch) {
 
-      if (vm.count("sync") && vm.count("sig")) {
-
-	// copy sync to tx_mdst buffers at idx = 0
-	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
-	  // replicate signal to all (N_SPB_BUFFS) buffers per chan
-	  for (unsigned int idx = 0; idx < 1; idx++) {
-	    memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
-		   (void*)tx_sync.data(), usrp1.spb() * sizeof(std::complex<float>) );
-	  }
+	if (boost::get_system_time() > next_console_refresh) {
+	  //count_processed_buffers = 0;
+	  next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1000e3));
+	  std::cerr << ".";
 	}
 
-	// copy signal to tx_mdst buffers at idx = 1.. N_SPB_BUFFS
-	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
-	  // replicate signal to all (N_SPB_BUFFS) buffers per chan
-	  for (unsigned int idx = 1; idx < N_SPB_BUFFS; idx++) {
-	    memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
-		   (void*)tx_signal.data(), usrp1.spb() * sizeof(std::complex<float>) );
-	  }
-	}
-
-      }
-      else if (vm.count("sig")) {
-	// copy signal to tx_mdst buffers for sending 
-	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
-	  // replicate signal to all (N_SPB_BUFFS) buffers per chan
-	  for (unsigned int idx = 0; idx < N_SPB_BUFFS; idx++) {
-	    memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
-		   (void*)tx_signal.data(), usrp1.spb() * sizeof(std::complex<float>) );
-	  }
-	}
-      }
-      else
-      {
-	std::vector<std::vector<std::complex<float> > > signal( usrp1.nTxChannels(), std::vector<std::complex<float> >(usrp1.spb() ));
-
-	int my_i[]   = {16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240};
-	float my_m[] = {.1, .1, .1, .1, .1, .1,  .1,  .1,  .1,  .1,  .1,  .1,  .1,  .1,  .1}; 
-	std::vector<unsigned int> bin_vec(my_i, my_i + sizeof(my_i) / sizeof(int) );
-	std::vector<float>        mag_vec(my_m, my_m + sizeof(my_m) / sizeof(float) );
-	multi_tone_1_256(bin_vec, mag_vec, signal.at(0));
-	//usrp1.plot_buffer("10.10.0.10", "1337", signal.at(0).data(), usrp1.spb());
-
-	// copy signal to tx_mdst buffers for sending 
-	for (unsigned int ch = 0; ch < usrp1.nTxChannels(); ch++) {
-	  // replicate signal to all (N_SPB_BUFFS) buffers per chan
-	  for (unsigned int idx = 0; idx < N_SPB_BUFFS; idx++) {
-	    memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
-		   (void*)signal.at(ch).data(), usrp1.spb() * sizeof(std::complex<float>) );
-	  }
-	}
-
-      }
+      } //  while(!local_kill_switch)
 
 
-      while( !local_kill_switch ) { 
-	if (tx_mdst.head() != 0) continue;
-
-
-	// if signal is constant then generate once above the while conditional.
-	// if sign is NOT constant then update signal here and copy to tx_mdst buffers.
-
-	// send signal in intervals
-	boost::this_thread::sleep(boost::posix_time::milliseconds(delay_ms));
-
-	tx_mdst.head_set( N_SPB_BUFFS); // kick off sending
-	std::cerr << ".";
-      }
       usrp1.stop_tx();
       tx_mdst.head_set ( 0 );
       tx_mdst.tail_set ( 0 );
 
     }
     boost::this_thread::sleep(boost::posix_time::milliseconds(1000));
-
     
     //finished
     std::cerr << std::endl << "Done!" << std::endl << std::endl;

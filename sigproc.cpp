@@ -419,20 +419,16 @@ int main(int argc, char *argv[])
   unsigned int spb, bin;
   unsigned int intv, run_time;
   unsigned int profile;
-  std::vector<std::string> str_opts;
   CDeviceStorage rx_mdst;
-  CDeviceStorage tx_mdst;
   std::string sync_samps_str;
 
   //setup the program options
   po::options_description desc("Allowed options");
   desc.add_options()
     ("help", "brief description of get/set handlers")
-    ("opts",  po::value<std::vector<std::string> >(&str_opts), "optional handlers")
     ("sync", po::value<std::string>(&sync_samps_str), "cf32 sync signal")
-    //("spec", "[use with --func rx] find peaks from magnitude fft")
     ("time", po::value<unsigned int>(&run_time)->default_value(10), "run time in seconds")
-    ("intv", po::value<unsigned int>(&intv),"repeat every 'intv' usec")
+    //("intv", po::value<unsigned int>(&intv),"repeat every 'intv' usec")
     ;
 
   po::variables_map vm;

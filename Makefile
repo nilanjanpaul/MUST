@@ -1,4 +1,4 @@
-all : rf_hw_intf sigproc_avg_bw_pwr
+all : rf_hw_intf sigproc_avg_bw_pwr sigtran
 
 CFLAGS=-O3
 HOST="node1-1"
@@ -9,14 +9,18 @@ rf_hw_intf : rf_hw_intf.cpp CTimer.cpp CTimer.h CRadio.hpp CDeviceStorage.hpp CS
 	g++ -c CTimer.cpp
 	g++ -o rf_hw_intf rf_hw_intf.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -luhd -lpugixml -lfftw3f -llog4cxx -lrt
 
-sigproc_avg_bw_pwr : sigproc.cpp CTimer.cpp CTimer.h CRadio.hpp CDeviceStorage.hpp CSharedMemSimple.hpp UDPSimple.hpp CWriteOml.h TCPSimple.hpp
+sigproc_avg_bw_pwr : sigproc.cpp CTimer.cpp CTimer.h CDeviceStorage.hpp CSharedMemSimple.hpp UDPSimple.hpp CWriteOml.h TCPSimple.hpp
 	g++ -c sigproc.cpp $(CFLAGS) -D COMPILE_AVG_BW_PWR
 	g++ -c CTimer.cpp $(CFLAGS)
 	g++ -o sigproc_avg_bw_pwr sigproc.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -lfftw3f -llog4cxx -lrt -lpthread -loml2
 
+sigtran : sigtran.cpp CTimer.cpp CTimer.h CDeviceStorage.hpp CSharedMemSimple.hpp UDPSimple.hpp CWriteOml.h TCPSimple.hpp
+	g++ -c sigtran.cpp
+	g++ -c CTimer.cpp
+	g++ -o sigtran sigtran.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -lfftw3f -llog4cxx -lrt -lpthread -loml2
 
 clean :
-	rm multi_xml *.o
+	rm rf_hw_intf sigproc_avg_bw_pwr sigtran *.o
 
 
 remote-clean :
@@ -24,7 +28,7 @@ remote-clean :
 
 remote-make :
 	ssh root@$(HOST) 'mkdir -p .tmp'
-	rsync -pt * root@$(HOST):/root/.tmp
+	rsync -ptr *      root@$(HOST):/root/.tmp
 	ssh root@$(HOST) 'cd .tmp && make'
 
 remote-release :
