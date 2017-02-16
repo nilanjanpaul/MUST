@@ -1,24 +1,35 @@
-# mrtx_config
+###########################################
+# Average Bandwiwth power
+###########################################
 
-# Example run:
-# ./rf_hw_intf --conf "devices.xml,/devices/grid_tx" --tx-only
-
-
-# sync="octave -qf sync.m"
-# samps="octave -qf waveform1.m"
-# ./rf_hw_intf --conf "devices.xml,/devices/grid_tx" --tx-only --sync "`$sync`" --sig "`$samps`"
-
-
-# sync="octave -qf sync.m"
-# ./rf_hw_intf --conf "devices.xml,/devices/grid_rx" --rx-only --sync "`$sync`" --cmd-port 5111
+# Transmit side:
+# ./rf_hw_intf --conf "devices.xml,/devices/grid_tx" --tx-only --cmd-port 5112
+# samps="octave -qf awgn256.m"
+# ./sigtran --sig "`$samps`" --intv 500
 
 
-# for SPLIT rx
+# Receive side:
 # ./rf_hw_intf --conf "devices.xml,/devices/grid_rx" --rx-only --cmd-port 5111
+# ./sigproc_avg_bw_pwr --time 100
 
+
+
+
+
+###########################################
+# Find signal start idx
+###########################################
+
+# Transmit side:
+# ./rf_hw_intf --conf "devices.xml,/devices/grid_tx" --tx-only --cmd-port 5112
+# samps="octave -qf sync.m"
+# ./sigtran --sig "`$samps`" --intv 500
+
+
+# Receive side:
+# ./rf_hw_intf --conf "devices.xml,/devices/grid_rx" --rx-only --cmd-port 5111
 # sync="octave -qf sync.m"
-# ./sigproc --sync "`$sync`"
-
+# ./sigproc_start_idx --sync  "`$sync`"
 
 
 # For octave display - rx_handler_find_idx()

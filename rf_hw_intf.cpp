@@ -30,8 +30,6 @@
 
 #define DBG_OUT(x) std::cerr << #x << " = " << x << std::endl
 
-#define DEFAULT_COMMAND_SERVER_PORT 5180
-
 
 using boost::asio::ip::tcp;
 
@@ -58,352 +56,16 @@ void signal_interrupt_control_c(int s){
   local_kill_switch = true;
 }
 
-static bool sort_f32_asc (float i,float j) { return (i<j); }
-
-static bool mag_compare(std::complex<float> a, std::complex<float> b)
-{
-  return (std::abs(a) < std::abs(b));
-}
-
-static bool real_compare(std::complex<float> a, std::complex<float> b)
-{
-  return (a.real() < b.real() );
-}
-
-void generate_freq_domain_signal(unsigned int spb, std::vector<unsigned int> bin, std::vector<float> mag, std::vector<std::complex<float> > &time_buff)
-{
-  std::vector<std::complex<float> > freq_buff(spb);
-
-  // size of bin and mag vector must match
-  if ( bin.size() != mag.size() )
-    {
-      std::cerr << "Error: bin.size() != mag.size()" << std::endl;
-      return;
-    }
-
-  // Transform declarations
-  fftwf_plan ifft_p = fftwf_plan_dft_1d(spb,
-					(fftwf_complex*)&freq_buff.front(),
-					(fftwf_complex*)&time_buff.front(),
-					FFTW_BACKWARD,
-					FFTW_ESTIMATE);
-
-  memset((void*)freq_buff.data(), 0, spb*sizeof(std::complex<float>) );
-
-  // populate bins with magnitude
-  for (unsigned int i = 0; i < bin.size(); i++)
-    {
-      if (bin.at(i) >= spb)
-	{
-	  std::cerr << "Error: bin.at(i) >= bin.size()" << std::endl;
-	  continue;
-	}
-      freq_buff.at( bin.at(i) ) = std::complex<float>(mag.at(i), 0.0);
-    }
-
-  fftwf_execute(ifft_p); // Octave equivalent: ifft(Y)*spb
-
-}
-
-// Example:
-//   int my_i[]   = {10, 20, 30, 40, 50, 60, 70, 80}; 
-//   float my_m[] = {.1, .1, .1, .1, .1, .1, .1, .1}; 
-//   std::vector<unsigned int> bin_vec(my_i, my_i + sizeof(my_i) / sizeof(int) );
-//   std::vector<float>        mag_vec(my_m, my_m + sizeof(my_m) / sizeof(float) );
-//   multi_tone_1_256(bin_vec, mag_vec, signal);
-void multi_tone_1_256(std::vector<unsigned int> bin_vec, std::vector<float> mag_vec, std::vector<std::complex<float> > &wave_buff)
-{
-  unsigned int spb = wave_buff.size();
-  generate_freq_domain_signal(spb, bin_vec, mag_vec, wave_buff);
-}
-
-
-void multi_tone_1_256_b1_b2(unsigned int b1, unsigned int b2, std::vector<std::complex<float> > &wave_buff)
-{
-  unsigned int spb = wave_buff.size();
-
-  float mag = .0125;
-  std::vector<float> mag_vec(b2-b1, mag);
-
-  std::vector<unsigned int> bin_vec;
-  for (unsigned int b = b1; b < b2; b++)
-    bin_vec.push_back(b % spb);
-
-  assert(bin_vec.size() == mag_vec.size());
-
-  generate_freq_domain_signal(spb, bin_vec, mag_vec, wave_buff);
-}
-
-
-
-// Example:
-//  std::vector<std::complex<float> > signal( usrp1.spb() );
-//  int bin = 4;
-//  single_tone_1_256( bin, 0.5, signal );
-void single_tone_1_256(int bin, float magnitude, std::vector<std::complex<float> > &wave_buff)
-{
-  unsigned int spb = wave_buff.size();
-
-  int my_i[]   = {bin};          std::vector<unsigned int> bin_vec(my_i, my_i + sizeof(my_i) / sizeof(int) );
-  float my_m[] = {magnitude};  std::vector<float>        mag_vec(my_m, my_m + sizeof(my_m) / sizeof(float) );
-  generate_freq_domain_signal(spb, bin_vec, mag_vec, wave_buff);
-
-}
-
-
-std::vector<std::complex<float> > t_sync_ref;
-std::vector<std::complex<float> > f_sync_ref;
-
-void rx_handler_find_idx(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int run_time)
-{
-
-  boost::this_thread::sleep(boost::posix_time::milliseconds(100));
-
-  unsigned int spb = rx_mdst.spb();
-  unsigned int nRxChannels = rx_mdst.nChannels();
-
-  std::vector<float> mag_buff( spb );
-  std::vector<std::complex<float> > fft_buff( spb );
-  assert( fft_buff.size() == spb);
-
-  unsigned int total_num_samps = rx_mdst.nsamps_per_ch();
-
-  boost::system_time next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
-  boost::system_time done_time = boost::get_system_time() + boost::posix_time::microseconds(long( run_time*1.0e6) );
-
-  // noise floor measurement
-  bool nf_ready = false;
-  std::vector<float> mag4hist(500);
-  float mag4_threshold = 0.0;
-  unsigned int nf_idx = 0;
-
-  // sync stuff
-  unsigned int state = 0;
-  float mag_4m1, mag_14m1;
-  std::vector<std::complex<float> > fft_m4_buff(spb*4);
-  std::vector<std::complex<float> > f_corr_m4_buff(spb*4);
-  std::vector<std::complex<float> > t_corr_m4_buff(spb*4);
-
-
-  t_sync_ref.resize( spb*4 );  // there is alread 256 samples in here. Verify resizing retains existing values.
-  f_sync_ref.resize( spb*4 );
-  fftwf_plan fft_sync_ref_p = fftwf_plan_dft_1d(spb*4,
-						(fftwf_complex*)&t_sync_ref.front(),
-						(fftwf_complex*)&f_sync_ref.front(),
-						FFTW_FORWARD,
-						FFTW_ESTIMATE);
-  fftwf_execute(fft_sync_ref_p);  // should be in f_sync_ref
-  fftwf_plan ifft_corr_p = fftwf_plan_dft_1d(spb*4,
-					     (fftwf_complex*)&f_corr_m4_buff.front(),
-					     (fftwf_complex*)&t_corr_m4_buff.front(),
-					     FFTW_BACKWARD,
-					     FFTW_ESTIMATE);
-
-
-
-
-  while ((!local_kill_switch) && (boost::get_system_time() < done_time)) {
-
-    if (rx_mdst.tail() == rx_mdst.head() ) continue;
-
-    unsigned int ch = 0; // this is the channel to trigger on
-
-    fftwf_plan fft_p = fftwf_plan_dft_1d( spb,
-					  (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail()),
-					  (fftwf_complex*)&fft_buff.front(),
-					  FFTW_FORWARD,
-					  FFTW_ESTIMATE);
-    fftwf_execute(fft_p);
-
-    fftwf_destroy_plan(fft_p);
-
-    // magnitude
-    for(int i = 0; i < spb; i++)
-      mag_buff.at(i) = abs(fft_buff.at(i));
-
-    // before doing anything else calc  noise level statistics for bin 4
-    // and set bin 4 detection threshold
-    if (nf_ready != true) { 
-      
-      mag4hist.at( nf_idx++ ) = mag_buff.at(4);
-      if ( nf_idx == mag4hist.size() ) { 
-      
-	nf_ready = true;
-	std::cerr << "nf ready!" << std::endl;
-
-	std::sort (mag4hist.begin(), mag4hist.end(), sort_f32_asc);
-	//for(int i = 0; i < mag4hist.size(); i++)  std::cerr << mag4hist.at(i) << std::endl;
-
-	float sum = 0.0;
-	float sum_sq = 0.0;
-	float avg, variance, stddev;
-	for(int i = 0; i < mag4hist.size()-1; i++) {
-	  sum += mag4hist.at(i);
-	  sum_sq += mag4hist.at(i) * mag4hist.at(i);
-	}
-	avg = sum / ( mag4hist.size()-1) ;
-	variance = sum_sq / ( mag4hist.size()-1)  - (avg * avg);
-	stddev = sqrt(variance);
-	std::cerr << "nf mag4 avg: " << avg << std::endl;
-	std::cerr << "nf mag4 var: " << variance << std::endl;
-	std::cerr << "nf mag4 std: " << stddev << std::endl;
-	
-	float n_stddevs = 10.0;
-	mag4_threshold = avg + n_stddevs * stddev;
-	std::cerr << "mag4 thres = " << mag4_threshold << " --- this is " << n_stddevs << " stddev away from mean" << std::endl;
-      }
-    }
-
-
-
-    // find max value index                               - asm inline this
-    unsigned int pki = std::distance(mag_buff.begin(),
-				     std::max_element(mag_buff.begin(), mag_buff.end()) );
-
-    if ((nf_ready == true) && 
-	(state == 0) && 
-	//(pki == 4) &&
-	(mag_buff.at(4) > mag4_threshold) &&
-	(rx_mdst.tail() < (rx_mdst.nbuffptrs() - 4) ))  // check roll over cond at tail - simple method
-      {
-	mag_4m1   = mag_buff.at(4);
-	mag_14m1  = mag_buff.at(14);
-	LOG4CXX_INFO(logger, "ch | tail | head | pki | mag " << ch << " " << rx_mdst.tail() << " " << rx_mdst.head() << " " << pki << " " << mag_buff.at(pki));
-
-	state = 1;
-      }
-    else if ((nf_ready == true) && 
-	     (state == 1)  ) {
-      // check tail buffer idx @ -1 0
-      std::cerr << mag_4m1   << " " << mag_14m1  << std::endl;
-      std::cerr << mag_buff.at(4)  << " " << mag_buff.at(14) << std::endl;
-
-
-      fftwf_plan fft_1024 = fftwf_plan_dft_1d( spb*4,
-					       (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail(-2)),
-					       (fftwf_complex*)&fft_m4_buff.front(),
-					       FFTW_FORWARD,
-					       FFTW_ESTIMATE);
-
-      // take 1024 FFT on signal from idx
-      fftwf_execute( fft_1024 );  // should be in fft_m4_buff
-      fftwf_destroy_plan( fft_1024 );
-
-      for (int i = 0; i < spb*4; i++)
-	f_corr_m4_buff.at(i) = fft_m4_buff.at(i) * std::conj(f_sync_ref.at(i));
-      
-      fftwf_execute( ifft_corr_p );  // should be in t_corr_m4_buff
-
-      //find max value index
-      unsigned int sample_corr_idx = std::distance(t_corr_m4_buff.begin(),
-						   std::max_element(t_corr_m4_buff.begin(), t_corr_m4_buff.end(), mag_compare) );
-
-      DBG_OUT(sample_corr_idx);
-      
-      //CRadio::plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 0, rx_mdst.tail(-2)), spb * 4);
-      usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 0, rx_mdst.tail(-2)), spb * 4);
-      usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 1, rx_mdst.tail(-2)), spb * 4);
-      usrp1.plot_buffer("10.10.0.10", "1337", rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 2, rx_mdst.tail(-2)), spb * 4);
-      LOG4CXX_INFO(logger, "tail | head : " << rx_mdst.tail() << " " << rx_mdst.head() );;
-
-
-      //usrp1.plot_rx("10.10.0.10", "1337", rx_mdst._tail-2, 4);
-      //local_kill_switch = true;
-      state = 0;
-    }
-   
-    // increment tail for next round
-    rx_mdst.tail_inc();
-    //rx_mdst._tail = rx_mdst._tail % rx_mdst.nbuffptrs();
-
-    //boost::this_thread::sleep(boost::posix_time::milliseconds(1));
-    if (boost::get_system_time() < next_console_refresh) continue;
-    next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1000e3));
-
-    DBG_OUT(mag_buff.at(4));
-    //DBG_OUT(rx_mdst._head);
-    //DBG_OUT(rx_mdst._tail);
-
-  } // while
-
-} // rx_handler_find_idx
-
-void rx_handler_find_peaks(CRadio& usrp1, CDeviceStorage& rx_mdst, unsigned int run_time)
-{
-
-  std::vector<float> mag_buff( usrp1.spb() );
-  std::vector<std::complex<float> > fft_buff( usrp1.spb());
-  assert( fft_buff.size() == usrp1.spb());
-
-  unsigned int total_num_samps = rx_mdst.nsamps_per_ch();
-
-  boost::system_time next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
-  boost::system_time done_time = boost::get_system_time() + boost::posix_time::microseconds(long( run_time*1.0e6) );
-
-  while ((!local_kill_switch) && (boost::get_system_time() < done_time)) {
- 
-    boost::this_thread::sleep(boost::posix_time::milliseconds(1));
-    if (boost::get_system_time() < next_console_refresh) continue;
-    next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(500e3));
-
-    while (rx_mdst.head() != 0);
-    
-    rx_mdst.print_time();
-    //DBG_OUT(rx_mdst.head);
-    //DBG_OUT(rx_mdst.tail);
-
-    // find peaks for different channels
-    for (unsigned int ch = 0; ch < usrp1.nRxChannels(); ch++) {
-      std::vector<float> mag_buff( total_num_samps );
-      std::vector<std::complex<float> > fft_buff( total_num_samps );
-
-      fftwf_plan fft_p = fftwf_plan_dft_1d( total_num_samps,
-					    (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( ch, 0),
-					    /*(fftwf_complex*)rx_mdst.buffer_ptr_( ch, 0), */
-					    (fftwf_complex*)&fft_buff.front(),
-					    FFTW_FORWARD,
-					    FFTW_ESTIMATE);
-      fftwf_execute(fft_p);
-
-      // magnitude - ignore frequencies around DC component
-      for(int i = 10; i < total_num_samps-10; i++)
-	mag_buff.at(i) = abs(fft_buff.at(i));
-
-      // find first 15 peaks
-      double avg_pw = 0.0;
-      for (unsigned int i = 0; i < 15 ; ++i)
-      {
-	// find max value index                               - asm inline this
-	unsigned int pki = std::distance(mag_buff.begin(),
-					 std::max_element(mag_buff.begin(), mag_buff.end()) );
-	//std::cerr << pki << ": " << mag_buff.at(pki) / total_num_samps << ": " << pki* usrp1.rx_rate(ch) / (total_num_samps) <<  std::endl;
-
-	avg_pw += mag_buff.at(pki) / total_num_samps;
-	// now zero out this peak
-	mag_buff.at(pki) = 0.0;
-      }
-      //std::cerr << "ch: " << ch << " --- avg pwr = " << 10*log10( avg_pw) << std::endl;
-
-      LOG4CXX_INFO(logger, "ch: " << ch << " --- avg pwr = " << 10*log10( avg_pw) );
-
-
-
-    } // for loop channels
-
-  } // while
-
-} // rx_handler_find_peaks
 
 
 int UHD_SAFE_MAIN(int argc, char *argv[]){
     uhd::set_thread_priority_safe();
 
     //variables to be set by po
-    std::string xml_config_str, xml_file, xml_path, sig_samples_str, sync_samps_str;
-    double seconds_in_future;
+    std::string xml_config_str, xml_file, xml_path;
     size_t total_num_samps;
     double rate, freq, gain;
-    unsigned int run_time, delay_ms;
+    unsigned int run_time;
     short command_server_port;
 
     //setup the program options
@@ -412,13 +74,9 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
         ("help", "help message")
         ("conf", po::value<std::string>(&xml_config_str), "specify xml device configuration file and path \"devices.xml,/devices/active\"")
         ("print-conf", "print device conf") 
-        ("secs", po::value<double>(&seconds_in_future)->default_value(1.5), "number of seconds in the future to receive")
-        ("time", po::value<unsigned int>(&run_time)->default_value(10), "run time in seconds")
-        ("sync", po::value<std::string>(&sync_samps_str), "cf32 sync signal")
-        ("sig", po::value<std::string>(&sig_samples_str), "cf32 samples")
-        ("intv", po::value<unsigned int>(&delay_ms)->default_value(2000), "transmit interval (ms) between signal burst")
-        ("rx-only", "enable receive side only")
-        ("tx-only", "enable transmit side only")
+      //("time", po::value<unsigned int>(&run_time)->default_value(10), "run time in seconds")
+        ("rx-only", "enable receive direction only")
+        ("tx-only", "enable transmit direction only")
         ("cmd-port", po::value<short>(&command_server_port)->default_value(5180),"command server port")
     ;
     po::variables_map vm;
@@ -427,7 +85,7 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
 
     //print the help message
     if (vm.count("help")){
-        std::cout << boost::format("UHD RX Multi Receive %s") % desc << std::endl;
+        std::cout << boost::format("Multi-channel Uhd STreamer v000.001.000\n %s") % desc << std::endl;
 	return 0;
     }
 
@@ -696,7 +354,7 @@ void command_session(socket_ptr sock)
   { 
     while(1)
     {
-      std::vector<char> command(256);
+      std::vector<char> command(256*100);
 
       sock->read_some(boost::asio::buffer( command ), error); // wait for the client to query
       if(error == boost::asio::error::eof)

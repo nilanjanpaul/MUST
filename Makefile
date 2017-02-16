@@ -1,4 +1,4 @@
-all : rf_hw_intf sigproc_avg_bw_pwr sigtran
+all : rf_hw_intf sigproc_avg_bw_pwr sigtran sigproc_start_idx
 
 CFLAGS=-O3
 HOST="node1-1"
@@ -13,6 +13,12 @@ sigproc_avg_bw_pwr : sigproc.cpp CTimer.cpp CTimer.h CDeviceStorage.hpp CSharedM
 	g++ -c sigproc.cpp $(CFLAGS) -D COMPILE_AVG_BW_PWR
 	g++ -c CTimer.cpp $(CFLAGS)
 	g++ -o sigproc_avg_bw_pwr sigproc.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -lfftw3f -llog4cxx -lrt -lpthread -loml2
+
+sigproc_start_idx : sigproc.cpp CTimer.cpp CTimer.h CDeviceStorage.hpp CSharedMemSimple.hpp UDPSimple.hpp CWriteOml.h TCPSimple.hpp
+	g++ -c sigproc.cpp $(CFLAGS) -D COMPILE_SIG_START_IDX
+	g++ -c CTimer.cpp $(CFLAGS)
+	g++ -o sigproc_start_idx sigproc.o CTimer.o -L/usr/local/lib/x86_64-linux-gnu -lboost_program_options -lboost_system -lboost_thread -lfftw3f -llog4cxx -lrt -lpthread -loml2
+
 
 sigtran : sigtran.cpp CTimer.cpp CTimer.h CDeviceStorage.hpp CSharedMemSimple.hpp UDPSimple.hpp CWriteOml.h TCPSimple.hpp
 	g++ -c sigtran.cpp

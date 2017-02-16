@@ -2,9 +2,12 @@
 #define _CWRITEOML_H_
 
 #include <iostream>
+#include <vector>
+#include <map>
 #include <string.h>
-#include <boost/lexical_cast.hpp>
 #include "oml2/omlc.h"
+
+#include <boost/lexical_cast.hpp>
 
 
 #define FALSE (unsigned int) 0
@@ -193,7 +196,6 @@ void CWriteOml::set_key(std::string key_str, void* val_ptr)
     omlc_set_string( *(TV.second), (char*)val_ptr);
     break;
     // add other cases here
-
   default :
     std::cerr << "OML - unrecognizeg type, value: " << TV.first << " , " << TV.second << std::endl;
     break;
@@ -205,20 +207,16 @@ void CWriteOml::set_key(std::string key_str, void* val_ptr)
 void CWriteOml::createMeasurementPoint(OmlMPDef* pOmlMPDef, std::string str, OmlValueT type)
 {
   char* cptr;
-  if (str == "NULL")
-    {
-      pOmlMPDef->name = NULL;
-      pOmlMPDef->param_types = type;
-
-    }
-  else
-    {
-      cptr = new char[str.size()+1];
-      strcpy (cptr, str.c_str());
-      pOmlMPDef->name = cptr;
-      pOmlMPDef->param_types = type;
-    }
-
+  if (str == "NULL") {
+    pOmlMPDef->name = NULL;
+    pOmlMPDef->param_types = type;
+  }
+  else {
+    cptr = new char[str.size()+1];
+    strcpy (cptr, str.c_str());
+    pOmlMPDef->name = cptr;
+    pOmlMPDef->param_types = type;
+  }
 }
 
 

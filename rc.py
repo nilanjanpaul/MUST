@@ -6,12 +6,21 @@
 #
 
 # Example commands:
-# python rc.py node1-1 5111 "rxfreq all 2400e6"
 # python rc.py node1-1 5111 "rxfreq all"
-# python rc.py node1-1 5111 "txfreq all 2400e6"
+# python rc.py node1-1 5111 "rxfreq all 2400e6"
+
+# python rc.py node1-1 5111 "rxgain all"
+# python rc.py node1-1 5111 "rxgain all 11"
+
+# python rc.py node1-1 5111 "rxrate all"
+
 # python rc.py node1-1 5111 "txfreq all"
-# python rc.py node1-1 5111 "txgain all 19"
+# python rc.py node1-1 5111 "txfreq all 3400e6"
+
 # python rc.py node1-1 5111 "txgain all"
+# python rc.py node1-1 5111 "txgain all 12"
+
+# python rc.py node1-1 5111 "txrate all"
 
 # python rc.py node1-1 5111 "rxhold on"
 # python rc.py node1-1 5111 "rxhold off"
@@ -31,7 +40,7 @@ s.connect((TCP_IP, TCP_PORT))
 
 COMMAND =  sys.argv[3]
 s.sendall(COMMAND)
-data = s.recv(256)
+data = s.recv(256*50)
 
 print data
 
