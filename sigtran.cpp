@@ -8,33 +8,26 @@
 
 #include <boost/thread/thread_time.hpp>
 #include "CDeviceStorage.hpp"
-#include <fftw3.h>
+//#include <fftw3.h>
 #include <signal.h>
 
-#include "log4cxx/logger.h"
-#include "log4cxx/propertyconfigurator.h"
-#include "log4cxx/helpers/exception.h"
-
-//#include <fstream>
 #include "UDPSimple.hpp"
 #include "CWriteOml.h"
 #include "CTimer.h"
 #include "TCPSimple.hpp"
 
-using namespace log4cxx;
-using namespace log4cxx::helpers;
+
+namespace po = boost::program_options;
 
 
-// octave commands:							\
-// > rcv_port = 1337; rcv_sck = fUDP_open_rx(rcv_port);			\
-// > [recv_data, recv_count]=recv(rcv_sck,4000,MSG_DONTWAIT); y = typecast(uint8(recv_data), 'single complex'); \
+bool local_kill_switch = false;
 
-static bool sort_f32_asc (float i,float j) { return (i<j); }
-
-static bool mag_compare(std::complex<float> a, std::complex<float> b)
-{
-  return (std::abs(a) < std::abs(b));
+void signal_interrupt_control_c(int s){
+  printf("Caught signal %d\n",s);
+  local_kill_switch = true;
 }
+
+
 
 void plot_cf32_buffer(std::string udp_dst_addr, std::string port, void *ptr_cf32, unsigned int n_cf32_values)
 {
@@ -62,17 +55,8 @@ void plot_cf32_buffer(std::string udp_dst_addr, std::string port, void *ptr_cf32
   }
 }
 
-LoggerPtr logger(Logger::getLogger("sigproc")); // replace with name of this file
-bool local_kill_switch = false;
-
-void signal_interrupt_control_c(int s){
-  printf("Caught signal %d\n",s);
-  local_kill_switch = true;
-}
-namespace po = boost::program_options;
 
 std::vector<std::complex<float> > tx_signal;
-
 
 //
 // Transmit function.
@@ -116,10 +100,7 @@ void tx_handler_my_signal(CDeviceStorage& tx_mdst, unsigned int run_time, unsign
 
 int main(int argc, char *argv[])
 {
-  std::string addr, port;
-  unsigned int spb, bin;
   unsigned int intv_us, run_time;
-  unsigned int profile;
   CDeviceStorage tx_mdst;
   std::string sig_samples_str;
 
@@ -129,7 +110,7 @@ int main(int argc, char *argv[])
     ("help", "brief description of get/set handlers")
     ("sig", po::value<std::string>(&sig_samples_str), "cf32 samples")
     ("time", po::value<unsigned int>(&run_time)->default_value(10), "run time in seconds")
-    ("intv", po::value<unsigned int>(&intv_us),"repeat every 'intv' usec")
+    ("intv", po::value<unsigned int>(&intv_us),"dwell 'intv' usec between transmits")
     ;
 
   po::variables_map vm;
@@ -141,9 +122,6 @@ int main(int argc, char *argv[])
     std::cerr << desc << std::endl;
     return ~0;
   }
-
-  // Configure the logger
-  PropertyConfigurator::configure("./logconf.prop");
 
   signal (SIGINT, signal_interrupt_control_c);
   
@@ -161,6 +139,10 @@ int main(int argc, char *argv[])
     assert(tokens.size() == tx_signal.size() );
     assert(tx_signal.size() == tx_mdst.spb() );
   }
+
+
+  // plot the transmit signal
+  // plot_cf32_buffer("10.10.0.10", "1337",  (void*)tx_signal.data(), tx_mdst.spb() );
 
   tx_handler_my_signal(tx_mdst, run_time, intv_us);
 
