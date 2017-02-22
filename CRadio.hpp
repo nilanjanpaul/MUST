@@ -681,7 +681,7 @@ void CRadio::_run_tx()
     next_refresh = boost::get_system_time() + boost::posix_time::microseconds(long( pkt_time_intv_us  ));
 
     if (_tx_mdst.head() == 0) {
-      _tx_stream->send((void*)zero_buf.data(), _spb, md);
+      //_tx_stream->send((void*)zero_buf.data(), _spb, md);
       md.start_of_burst = false;
       md.has_time_spec = false;
       continue;
