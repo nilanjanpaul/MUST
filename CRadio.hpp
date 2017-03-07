@@ -18,9 +18,9 @@
 #define RETURN_ERROR  -1
 
 // Define number of buffers to store
-#define RX_DEV_STORAGE_N_SPB_BUFFS  (64*4)
-#define TX_DEV_STORAGE_N_SPB_BUFFS  (16)
-
+//#define RX_DEV_STORAGE_N_SPB_BUFFS  (64*4)
+//#define TX_DEV_STORAGE_N_SPB_BUFFS  (16)     // 16 -->  4096 samples / ch
+                                             // 64 --> 16384 samples / ch
 struct __s_tuner_conf {
   double freq;
   double rate;
@@ -71,8 +71,8 @@ class CRadio
   public:
     CRadio();
     int make_device_handle(std::string XML_FILE_PATH, std::string xml_path_conf);
-    void init_rx();
-    void init_tx();
+    void init_rx( unsigned int spb, unsigned int RX_DEV_STORAGE_N_SPB_BUFFS );
+    void init_tx( unsigned int spb, unsigned int TX_DEV_STORAGE_N_SPB_BUFFS);
 
   //CDeviceStorage& rx_mdst() { return _rx_mdst; } 
   //CDeviceStorage& tx_mdst() { return _tx_mdst; } 
@@ -155,7 +155,7 @@ CRadio::CRadio()
 {
   _isRxInit = _isTxInit = _is_rx_streaming_on = false;
   _is_rx_pause_on = false;
-  _spb = 256;
+  //_spb = 256;
 }
 
 int CRadio::make_device_handle(std::string XML_FILE_PATH, std::string xml_path_conf)
@@ -304,11 +304,14 @@ int CRadio::make_device_handle(std::string XML_FILE_PATH, std::string xml_path_c
 
 }
 
-void CRadio::init_rx()
+void CRadio::init_rx(unsigned int spb, unsigned int RX_DEV_STORAGE_N_SPB_BUFFS)
 {
 
   if (_isRxInit == true)
     return;
+
+  _spb = spb;
+
      
   // =====================================================================================
   // Set up uhd rx chain
@@ -387,7 +390,6 @@ void CRadio::init_rx()
 
 } // End of init_rx
 
-
 void CRadio::run_rx_async()
 {
   //boost::thread t(boost::bind( &CRadio::_run_rx, this, boost::ref(rx_mdst) ));
@@ -445,9 +447,10 @@ void CRadio::_run_rx( )
     }
     
     //use a small timeout for subsequent packets
-    timeout = 0.01;
+    timeout = 0.1;
 
-    if (_is_rx_pause_on) continue;
+    //if (_is_rx_pause_on) continue;
+    if (_rx_mdst.is_pause() == true) continue;
 
     _rx_mdst.time( _md.time_spec.get_full_secs(), _md.time_spec.get_frac_secs());
 
@@ -551,11 +554,13 @@ void CRadio::print_radio_configurations()
 }
 
 
-void CRadio::init_tx()
+void CRadio::init_tx(unsigned int spb, unsigned int TX_DEV_STORAGE_N_SPB_BUFFS)
 {
 
   if (_isTxInit == true)
     return;
+
+  _spb = spb;
 
   // =====================================================================================
   // Set up uhd tx chain
@@ -648,6 +653,9 @@ void CRadio::_run_tx()
 {
 
   std::vector<std::complex<float> > zero_buf(_spb);
+  std::vector<std::complex<float> *> zero_buff_ptrs;
+  for (size_t i = 0; i < _nTxChannels; i++) zero_buff_ptrs.push_back(&zero_buf.front() );
+
 
   //create a receive streamer - populate channel list
   //linearly map channels (index0 = channel0, index1 = channel1, ...)
@@ -681,7 +689,7 @@ void CRadio::_run_tx()
     next_refresh = boost::get_system_time() + boost::posix_time::microseconds(long( pkt_time_intv_us  ));
 
     if (_tx_mdst.head() == 0) {
-      //_tx_stream->send((void*)zero_buf.data(), _spb, md);
+      _tx_stream->send(zero_buff_ptrs, _spb, md);
       md.start_of_burst = false;
       md.has_time_spec = false;
       continue;

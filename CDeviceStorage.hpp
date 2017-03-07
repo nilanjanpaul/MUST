@@ -31,6 +31,7 @@ class CDeviceStorage {
 private:
 
   bool _use_shared_memory;
+  bool _pause_flag;
   std::string _shm_uid;
   
   struct _s_DeviceBufferFormatType _BufferMetaData, *_mp;
@@ -44,16 +45,18 @@ private:
   typedef std::vector<std::complex<float> *> BufferPointerType;
   std::vector<BufferPointerType> _MultiDeviceBufferPtrs;
 
+
 public:
 
-  //MultiDeviceBufferType _MultiDeviceWasteBuffer;
   
   // constructor
   CDeviceStorage()
   {
     _use_shared_memory = false;
+    _pause_flag = false;
     _MultiDeviceBufferPtrs.clear();
     _MultiDeviceBuffer.clear();
+
   }
 
   // Destructor
@@ -77,6 +80,15 @@ public:
 
   void head_set(unsigned int i) { _mp->head = i; }                          // set head to new offset
   void tail_set(unsigned int i) { _mp->tail = i; }                          // set tail to new offset
+
+  unsigned int depth() {
+    int d = (int)_mp->head - (int)_mp->tail;
+    if (d < (int)0) d += _mp->nbuffptrs;
+    return (unsigned int)d;
+  }
+
+  void pause(bool f) { _pause_flag = f; }
+  bool is_pause() { return _pause_flag ; }
 
   void shared_memory(std::string shm_uid)
   {

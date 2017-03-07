@@ -15,7 +15,7 @@
 #include "log4cxx/propertyconfigurator.h"
 #include "log4cxx/helpers/exception.h"
 
-//#include <fstream>
+#include <fstream>
 #include "UDPSimple.hpp"
 #include "CWriteOml.h"
 #include "CTimer.h"
@@ -25,9 +25,16 @@ using namespace log4cxx;
 using namespace log4cxx::helpers;
 
 
-// octave commands:							\
-// > rcv_port = 1337; rcv_sck = fUDP_open_rx(rcv_port);			\
-// > [recv_data, recv_count]=recv(rcv_sck,4000,MSG_DONTWAIT); y = typecast(uint8(recv_data), 'single complex'); \
+
+using boost::asio::ip::udp;
+typedef boost::shared_ptr<tcp::socket> socket_ptr;
+void command_server(short port);
+void command_session(socket_ptr sock);
+int nCmdThreadCnt = 0;
+
+CDeviceStorage rx_mdst;
+std::vector<std::vector<std::complex<float> > > snapshot256;
+
 
 static bool sort_f32_asc (float i,float j) { return (i<j); }
 
@@ -255,6 +262,24 @@ void rx_handler_find_signal_start_idx(CDeviceStorage& rx_mdst, unsigned int run_
 
   boost::system_time next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1.0e6));
   boost::system_time done_time = boost::get_system_time() + boost::posix_time::microseconds(long( run_time*1.0e6) );
+  boost::system_time next_sync_time = boost::get_system_time() + boost::posix_time::microseconds(long(2.0e6));
+
+
+  // read in ofdm signal from file
+  std::vector<std::complex<float> > ofdm_signal;
+
+  //std::ifstream is ("OFDMPacketRandomSymbols256.dat", std::ifstream::binary);
+  std::ifstream is ("my_signal_256.dat", std::ifstream::binary);
+  is.seekg (0, is.end);
+  unsigned int length = is.tellg();
+  is.seekg (0, is.beg);
+  unsigned int nSamples = length / sizeof(std::complex<float>);
+  ofdm_signal.resize( nSamples );
+  is.read ( (char*)ofdm_signal.data(), length);
+
+  // plot the signal
+  //plot_cf32_buffer("10.10.0.10", "1337",  (void*)ofdm_signal.data(), ofdm_signal.size() );
+
 
   // noise floor measurement
   bool nf_ready = false;
@@ -290,10 +315,10 @@ void rx_handler_find_signal_start_idx(CDeviceStorage& rx_mdst, unsigned int run_
 
     if (rx_mdst.tail() == rx_mdst.head() ) continue;
 
-    unsigned int ch = 0; // this is the channel to trigger on
+    unsigned int trigger_ch = 3; // this is the channel to trigger on
 
     fftwf_plan fft_p = fftwf_plan_dft_1d( spb,
-					  (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail()),
+					  (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( trigger_ch, rx_mdst.tail()),
 					  (fftwf_complex*)&fft_buff.front(),
 					  FFTW_FORWARD,
 					  FFTW_ESTIMATE);
@@ -347,51 +372,97 @@ void rx_handler_find_signal_start_idx(CDeviceStorage& rx_mdst, unsigned int run_
     if ((nf_ready == true) && 
 	(state == 0) && 
 	//(pki == 4) &&
+        !(boost::get_system_time() < next_sync_time) &&
 	(mag_buff.at(4) > mag4_threshold) &&
 	(rx_mdst.tail() < (rx_mdst.nbuffptrs() - 4) ))  // check roll over cond at tail - simple method
-      {
-	mag_4m1   = mag_buff.at(4);
-	mag_14m1  = mag_buff.at(14);
-	LOG4CXX_INFO(logger, "ch | tail | head | pki | mag " << ch << " " << rx_mdst.tail() << " " << rx_mdst.head() << " " << pki << " " << mag_buff.at(pki));
+    {
+      mag_4m1   = mag_buff.at(4);
+      mag_14m1  = mag_buff.at(14);
+      LOG4CXX_INFO(logger, "ch | tail | head | pki | mag " << trigger_ch << " " << rx_mdst.tail() << " " << rx_mdst.head() << " " << pki << " " << mag_buff.at(pki));
 
-	state = 1;
-      }
+      state = 1;
+    }
     else if ((nf_ready == true) && 
 	     (state == 1)  ) {
+
+      // wait to accumualte enough samples in queue
+      if ( rx_mdst.depth() > 5 ) state = 2;
+      continue; // ==> do NOT increment tail pointer
+    }
+    else if ((nf_ready == true) && 
+	     (state == 2)  ) {
+
+      // once a sync seq has been detected do not expect another sync sequence for specificed duration
+      next_sync_time = boost::get_system_time() + boost::posix_time::microseconds(long(3.0e6));
+      //rx_mdst.pause( true );
+
       // check tail buffer idx @ -1 0
-      std::cerr << mag_4m1   << " " << mag_14m1  << std::endl;
-      std::cerr << mag_buff.at(4)  << " " << mag_buff.at(14) << std::endl;
+      //std::cerr << mag_4m1   << " " << mag_14m1  << std::endl;
+      //std::cerr << mag_buff.at(4)  << " " << mag_buff.at(14) << std::endl;
 
+      std::vector<unsigned int> corr_idx(nRxChannels);
+      // find coorelation idx for all channels
+      for (unsigned int ch = 0; ch < nRxChannels; ch++) {
+	fftwf_plan fft_1024 = fftwf_plan_dft_1d( spb*4,
+						 (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail(-2)),
+						 (fftwf_complex*)&fft_m4_buff.front(),
+						 FFTW_FORWARD,
+						 FFTW_ESTIMATE);
 
-      fftwf_plan fft_1024 = fftwf_plan_dft_1d( spb*4,
-					       (fftwf_complex*)rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail(-2)),
-					       (fftwf_complex*)&fft_m4_buff.front(),
-					       FFTW_FORWARD,
-					       FFTW_ESTIMATE);
+	// take 1024 FFT on signal from idx
+	fftwf_execute( fft_1024 );  // should be in fft_m4_buff
+	fftwf_destroy_plan( fft_1024 );
 
-      // take 1024 FFT on signal from idx
-      fftwf_execute( fft_1024 );  // should be in fft_m4_buff
-      fftwf_destroy_plan( fft_1024 );
-
-      for (int i = 0; i < spb*4; i++)
-	f_corr_m4_buff.at(i) = fft_m4_buff.at(i) * std::conj(f_sync_ref.at(i));
+	for (int i = 0; i < spb*4; i++)
+	  f_corr_m4_buff.at(i) = fft_m4_buff.at(i) * std::conj(f_sync_ref.at(i));
       
-      fftwf_execute( ifft_corr_p );  // should be in t_corr_m4_buff
+	fftwf_execute( ifft_corr_p );  // should be in t_corr_m4_buff
 
-      //find max value index
-      unsigned int sample_corr_idx = std::distance(t_corr_m4_buff.begin(),
-						   std::max_element(t_corr_m4_buff.begin(), t_corr_m4_buff.end(), mag_compare) );
+	//find max value index
+	corr_idx.at(ch) = std::distance(t_corr_m4_buff.begin(),
+					std::max_element(t_corr_m4_buff.begin(), t_corr_m4_buff.end(), mag_compare) );
 
-      DBG_OUT(sample_corr_idx);
+	if ( (ch != trigger_ch) && (corr_idx.at(ch) >= (spb*4 - 128)))
+	     corr_idx.at(ch) = 0;
 
-      plot_cf32_buffer("10.10.0.10", "1337",  rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 0, rx_mdst.tail(-2)), spb * 4);
-      plot_cf32_buffer("10.10.0.10", "1337",  rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 1, rx_mdst.tail(-2)), spb * 4);
-      plot_cf32_buffer("10.10.0.10", "1337",  rx_mdst.buffer_ptr_ch_idx_( /*ch*/ 2, rx_mdst.tail(-2)), spb * 4);
-      LOG4CXX_INFO(logger, "tail | head : " << rx_mdst.tail() << " " << rx_mdst.head() );;
+	DBG_OUT(corr_idx.at(ch));
 
-      //usrp1.plot_rx("10.10.0.10", "1337", rx_mdst._tail-2, 4);
-      local_kill_switch = true;
+      } // for (unsigned int ch = 0; ch < nRxChannels; ch++)
+
+
+#if 0
+      for (unsigned int ch = 0; ch < nRxChannels; ch++) {
+	// channel (ch) signal starts at address rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail(-2)) + sample_corr_idx + spb
+	std::complex<float> *cf32_ptr;
+	cf32_ptr = (std::complex<float> *) rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail(-2)) + corr_idx.at( ch ) + spb;
+	std::vector<std::complex<float> > theta_ch0(spb);
+	for (unsigned int i = 0 ; i < spb; i++)
+	  theta_ch0.at(i) = *(cf32_ptr+i) / ofdm_signal.at(i);
+	//plot_cf32_buffer("10.10.0.10", "1337",  theta_ch0.data(), spb);
+
+	cf32_ptr = (std::complex<float> *) rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail(-2)) + corr_idx.at( ch ) + spb*2;
+	for (unsigned int i = 0 ; i < spb; i++)
+	  theta_ch0.at(i) = *(cf32_ptr+i) / ofdm_signal.at(i);
+	//plot_cf32_buffer("10.10.0.10", "1337",  theta_ch0.data(), spb);
+      }
+#endif
+
+      // record shapshot of 256 samples / per ch  for  viewing pleasure
+      for (unsigned int ch = 0; ch < nRxChannels; ch++) {
+	std::complex<float> *cf32_ptr = (std::complex<float> *) rx_mdst.buffer_ptr_ch_idx_( ch, rx_mdst.tail(-2)) + corr_idx.at( ch ) + spb;
+	memcpy ( (void*)snapshot256.at(ch).data(), (void*)cf32_ptr, spb * sizeof(std::complex<float> ) );
+      }
+
+      //plot_cf32_buffer("10.10.0.10", "1337",  cf32_ptr, spb * 4);
+      //plot_cf32_buffer("10.10.0.10", "1337",  (std::complex<float> *)rx_mdst.buffer_ptr_ch_idx_( 0, rx_mdst.tail(-2)) , spb * 4);
+      //plot_cf32_buffer("10.10.0.10", "1337",  (std::complex<float> *)rx_mdst.buffer_ptr_ch_idx_( 3, rx_mdst.tail(-2)) , spb * 4);
+      //plot_cf32_buffer("10.10.0.10", "1337",  (std::complex<float> *)rx_mdst.buffer_ptr_ch_idx_( 4, rx_mdst.tail(-2)) , spb * 4);
+      LOG4CXX_INFO(logger, "tail | head : " << rx_mdst.tail() << " " << rx_mdst.head() );
+
+      //local_kill_switch = true;
       state = 0;
+      //rx_mdst.pause(false);
+
     }
    
     // increment tail for next round
@@ -402,14 +473,12 @@ void rx_handler_find_signal_start_idx(CDeviceStorage& rx_mdst, unsigned int run_
     if (boost::get_system_time() < next_console_refresh) continue;
     next_console_refresh = boost::get_system_time() + boost::posix_time::microseconds(long(1000e3));
 
-    DBG_OUT(mag_buff.at(4));
-    //DBG_OUT(rx_mdst._head);
-    //DBG_OUT(rx_mdst._tail);
-
   } // while
 
-} // rx_handler_find_signal_start_idx
+  std::cerr << "time up - exitting..." << std::endl;
 
+
+} // rx_handler_find_signal_start_idx
 
 
 
@@ -419,8 +488,8 @@ int main(int argc, char *argv[])
   unsigned int spb, bin;
   unsigned int intv, run_time;
   unsigned int profile;
-  CDeviceStorage rx_mdst;
   std::string sync_samps_str;
+  short command_server_port;
 
   //setup the program options
   po::options_description desc("Allowed options");
@@ -428,6 +497,8 @@ int main(int argc, char *argv[])
     ("help", "brief description of get/set handlers")
     ("sync", po::value<std::string>(&sync_samps_str), "cf32 sync signal")
     ("time", po::value<unsigned int>(&run_time)->default_value(10), "run time in seconds")
+    ("cmd-port", po::value<short>(&command_server_port)->default_value(5180),"command server port")
+
     //("intv", po::value<unsigned int>(&intv),"repeat every 'intv' usec")
     ;
 
@@ -446,6 +517,9 @@ int main(int argc, char *argv[])
 
   signal (SIGINT, signal_interrupt_control_c);
   
+  boost::thread cmds(command_server, command_server_port);
+
+
   rx_mdst.attach_shm("/ShmMultiDeviceBufferRx");
   rx_mdst.print_info();
 
@@ -461,6 +535,11 @@ int main(int argc, char *argv[])
     assert(t_sync_ref.size() == rx_mdst.spb() );
   }
 
+  snapshot256.resize( rx_mdst.nChannels() );
+  for (unsigned int ch = 0; ch < snapshot256.size(); ch++)
+    snapshot256.at(ch).resize (rx_mdst.spb());
+
+
   // test here
   //plot_cf32_buffer("10.10.0.10", "1337", t_sync_ref.data(), t_sync_ref.size() );
   //plot_cf32_buffer("10.10.0.10", "1337", t_sync_ref.data(), t_sync_ref.size() );
@@ -474,8 +553,127 @@ int main(int argc, char *argv[])
   rx_handler_find_avg_bw_pwr(rx_mdst, run_time);
 #endif
 
+  //cmds.join();
 
   std::cerr << "Done!" << std::endl;
   return ~0;
+}
+
+
+void command_session(socket_ptr sock)
+{
+  std::vector<unsigned char> command(256);
+  boost::system::error_code error;
+  unsigned int N_SAMPS_TO_SEND = 32;
+
+  try
+  { 
+    while(1)
+    {
+      sock->read_some(boost::asio::buffer( command ), error); // wait for the client to query
+      if(error == boost::asio::error::eof)
+      {
+        LOG4CXX_INFO(logger, "Connection closed");
+        break;
+      }
+      else if(error)
+        throw boost::system::system_error(error);
+        
+
+      LOG4CXX_INFO(logger, (char*)&command.front());
+
+      std::string str_command = boost::lexical_cast<std::string>( &command.front() );
+      std::string resp;
+
+      std::vector<std::string> tokens;
+      boost::split(tokens, str_command, boost::is_any_of(", "), boost::token_compress_on);
+
+      if (tokens.at(0) == "hello") {
+	resp = "Received: ";
+	resp += boost::lexical_cast<std::string>( &command.front() );
+      }
+      else if (tokens.at(0) == "ping") {
+	resp.resize(256);
+	unsigned char *ucptr = (unsigned char*)resp.data();
+	for(unsigned int i = 0; i < resp.size(); i++) {
+	  unsigned char d = (unsigned char)(( rand()/(double)RAND_MAX ) * 80.0) + 20.0;
+	  *ucptr++ = (unsigned char)d;
+	}
+      }
+      else if (tokens.at(0) == "GetConfig") {
+	unsigned int nChannels = rx_mdst.nChannels();;
+
+	            // 8 byte for header +  sizeof(nchannels)     + sizeof(nsamples)
+	resp.resize( (sizeof(float) * 2) + (sizeof(unsigned int)) + (sizeof(unsigned int)));
+	unsigned int *ui32ptr = (unsigned int*)resp.data();
+	unsigned int *ui32ptr_numbytes = ui32ptr + 1;
+
+	*ui32ptr++ = 0x000000ff;            //Type
+	*ui32ptr++ = 0x0; //sizeof( nChannels) ;   //num bytes following this field
+
+	*ui32ptr++ = nChannels; 
+	*ui32ptr++ = 32;
+
+	*ui32ptr_numbytes = sizeof(unsigned int) * ((unsigned int)(ui32ptr - ui32ptr_numbytes - 1) );
+	//DBG_OUT(*ui32ptr_numbytes );
+      }
+      else if (tokens.at(0) == "GetIQ") {
+
+	unsigned int nChannels = rx_mdst.nChannels();;
+
+	            // 8 byte for header +  sizeof( total samples  in all channels)
+	resp.resize( (sizeof(float) * 2) + (sizeof(std::complex<float>) * (N_SAMPS_TO_SEND * nChannels)) );
+	//resp.resize( (sizeof(std::complex<float>) * (32 + 32 + 32))  + (sizeof(float) * 2) ); // + 8 byte for header
+	unsigned int *ui32ptr = (unsigned int*)resp.data();
+	unsigned int *ui32ptr_numbytes = ui32ptr + 1;
+;
+	*ui32ptr++ = 0x000000fe; //Type
+	*ui32ptr++ = 0x0; // (sizeof(std::complex<float>) * (32 + 32 + 32));   //num bytes following this field
+
+	// send 32 IQ points per channel
+	for (unsigned int ch = 0; ch < nChannels; ch++) {
+	  memcpy((void*)ui32ptr, snapshot256.at( ch ).data(), (sizeof(std::complex<float>) * N_SAMPS_TO_SEND)) ;
+	  ui32ptr += N_SAMPS_TO_SEND * (sizeof(std::complex<float>) / sizeof(unsigned int)) ;
+	}
+
+	*ui32ptr_numbytes = sizeof(unsigned int) * ((unsigned int)(ui32ptr - ui32ptr_numbytes - 1) );
+
+      }
+      else {
+	LOG4CXX_INFO(logger, str_command );
+      }
+      boost::asio::write(*sock, boost::asio::buffer(resp.data(),resp.size() ));
+	
+    }
+    LOG4CXX_INFO(logger, "command thread count: " << --nCmdThreadCnt << " [host: " << sock->remote_endpoint().address().to_string() << "]" );
+  }  
+  catch (std::exception& e)
+  {
+    std::cerr << "Exception in command thread: " << e.what() << "\n";
+    LOG4CXX_ERROR(logger, "command thread count: " << --nCmdThreadCnt << " [host: " << sock->remote_endpoint().address().to_string() << "]" );
+    return;
+  }
+}
+
+
+
+
+
+
+void command_server(short port)
+{
+  boost::asio::io_service io_service;
+
+  LOG4CXX_INFO(logger, "Starting command server at " << port);
+  tcp::acceptor a(io_service, tcp::endpoint(tcp::v4(), port));
+  for (;;)
+  //while( !local_kill_switch  )
+  {
+    socket_ptr sock(new tcp::socket(io_service));
+    if (nCmdThreadCnt >= 1) continue;
+    a.accept(*sock);
+    boost::thread t(boost::bind(command_session, sock));
+    LOG4CXX_INFO(logger, "command thread count: " << ++nCmdThreadCnt << " [host: " << sock->remote_endpoint().address().to_string() << "]" );
+  }
 }
 

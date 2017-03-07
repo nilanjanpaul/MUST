@@ -15,9 +15,33 @@
 #include "CWriteOml.h"
 #include "CTimer.h"
 #include "TCPSimple.hpp"
+#include <fstream>
 
 
 namespace po = boost::program_options;
+
+#define READ_VECTOR(readFileName, buffer)				\
+  {									\
+    std::ifstream is (readFileName, std::ifstream::binary);		\
+    if (!is)								\
+    {									\
+      std::cout << "Error openning file: " << readFileName <<std::endl;	\
+    }									\
+    else								\
+    {						                        \
+      unsigned int numberOfBytes;					\
+      unsigned int typeOfData;						\
+      is.read((char*) &numberOfBytes, sizeof(numberOfBytes));		\
+      is.read((char*) &typeOfData,    sizeof(typeOfData));		\
+      buffer.resize(1);							\
+      unsigned int nElements = numberOfBytes / sizeof(buffer.at(0));	\
+      buffer.resize(nElements);						\
+      is.read ((char*) &buffer.front(), numberOfBytes);			\
+    }									\
+  }
+
+
+void tx_handler_sync_plus_ofdm(CDeviceStorage& tx_mdst, unsigned int run_time, unsigned int intv_us);
 
 
 bool local_kill_switch = false;
@@ -74,9 +98,16 @@ void tx_handler_my_signal(CDeviceStorage& tx_mdst, unsigned int run_time, unsign
   // copy signal to tx_mdst buffers for sending 
   for (unsigned int ch = 0; ch < nTxChannels; ch++) {
     // replicate signal to all (N_SPB_BUFFS) buffers per chan
-    for (unsigned int idx = 0; idx < n_spb_buffs; idx++) {
+    for (unsigned int idx = 0; idx < 1; idx++) {
       memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
 	     (void*)tx_signal.data(), spb * sizeof(std::complex<float>) );
+    }
+  }
+
+  for (unsigned int ch = 0; ch < nTxChannels; ch++) {
+    // replicate signal to all (N_SPB_BUFFS) buffers per chan
+    for (unsigned int idx = 1; idx < n_spb_buffs; idx++) {
+      memset((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx), 0, spb * sizeof(std::complex<float>));
     }
   }
 
@@ -144,10 +175,93 @@ int main(int argc, char *argv[])
   // plot the transmit signal
   // plot_cf32_buffer("10.10.0.10", "1337",  (void*)tx_signal.data(), tx_mdst.spb() );
 
-  tx_handler_my_signal(tx_mdst, run_time, intv_us);
-
+  //tx_handler_my_signal(tx_mdst, run_time, intv_us);
+  tx_handler_sync_plus_ofdm(tx_mdst, run_time, intv_us);
 
   std::cerr << "Done!" << std::endl;
   return ~0;
 }
 
+
+
+
+//
+// Transmit function.
+// Create your own signal in OFDMPacketRandomSymbols256.dat and send
+//
+void tx_handler_sync_plus_ofdm(CDeviceStorage& tx_mdst, unsigned int run_time, unsigned int intv_us)
+{
+  unsigned int spb = tx_mdst.spb();
+  unsigned int nTxChannels = tx_mdst.nChannels();
+  unsigned int total_num_samps = tx_mdst.nsamps_per_ch();
+  unsigned int n_spb_buffs = tx_mdst.nbuffptrs();
+  //DBG_OUT(spb); DBG_OUT(nTxChannels); DBG_OUT(total_num_samps); DBG_OUT (n_spb_buffs);
+
+
+  // read in ofdm signal from file
+  std::vector<std::complex<float> > ofdm_signal;
+
+  //std::ifstream is ("OFDMPacketRandomSymbols256.dat", std::ifstream::binary);
+  std::ifstream is ("my_signal_256.dat", std::ifstream::binary);
+  is.seekg (0, is.end);
+  unsigned int length = is.tellg();
+  is.seekg (0, is.beg);
+  unsigned int nSamples = length / sizeof(std::complex<float>);
+  ofdm_signal.resize( nSamples );
+  is.read ( (char*)ofdm_signal.data(), length);
+
+  // plot the signal
+  // plot_cf32_buffer("10.10.0.10", "1337",  (void*)ofdm_signal.data(), ofdm_signal.size() );
+
+
+  //nTxChannels = 1;
+  // idx 0: sync signal 256 samples
+  for (unsigned int ch = 0; ch < nTxChannels; ch++) {
+    // replicate signal to all (N_SPB_BUFFS) buffers per chan
+    for (unsigned int idx = 0; idx < 1; idx++) {
+      memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
+	     (void*)tx_signal.data(), spb * sizeof(std::complex<float>) );
+    }
+  }
+
+  // idx 1..2: ofdm signal 256 samples
+  for (unsigned int ch = 0; ch < nTxChannels; ch++) {
+    // just insert 1 copy of the ofdm signal
+    for (unsigned int idx = 1; idx < n_spb_buffs; idx++) {
+      memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx),
+	     (void*)ofdm_signal.data(), spb * sizeof(std::complex<float>) );
+    }
+  }
+#if 0
+  // idx 3..n_spb_buffs: zeros
+  for (unsigned int ch = 0; ch < nTxChannels; ch++) {
+    // replicate signal to all (N_SPB_BUFFS) buffers per chan
+    for (unsigned int idx = 8; idx < n_spb_buffs; idx++) {
+      memset((void*)tx_mdst.buffer_ptr_ch_idx_(ch, idx), 0, spb * sizeof(std::complex<float>));
+    }
+  }
+#endif
+
+
+#if 0
+  for (unsigned int ch = 0; ch < nTxChannels; ch++) {
+    memcpy((void*)tx_mdst.buffer_ptr_ch_idx_(ch, 1),
+	   (void*)ofdm_signal.data(), ofdm_signal.size() * sizeof(std::complex<float>) );
+  }
+#endif
+
+  while( !local_kill_switch ) { 
+    if (tx_mdst.head() != 0) continue;
+
+    // if signal is constant then generate once above the while conditional.
+    // if sign is NOT constant then update signal here and copy to tx_mdst buffers.
+    // To be tried out :P
+
+
+    // send signal in intervals
+    boost::this_thread::sleep(boost::posix_time::microseconds(intv_us));
+    tx_mdst.head_set( n_spb_buffs ); // kick off sending
+    std::cerr << ".";
+  }
+
+}

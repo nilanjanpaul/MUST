@@ -127,7 +127,9 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       DBG_OUT( usrp1.nRxChannels() );
       DBG_OUT( usrp1.spb() );
 
-      usrp1.init_rx();
+      
+      usrp1.init_rx(256,       // this is 256 samples per BUFF
+		    64*4);     // 64*4 BUFFs
 
       // attach to streaming buffer memory structure
       //CDeviceStorage &rx_mdst = usrp1.rx_mdst();
@@ -165,8 +167,9 @@ int UHD_SAFE_MAIN(int argc, char *argv[]){
       DBG_OUT( usrp1.nTxChannels() );
       DBG_OUT( usrp1.spb() );
 
-      usrp1.init_tx();
-      
+      usrp1.init_tx(256,       // this is 256 samples per BUFF
+		    16*4);     // 16*4 BUFFs
+     
       // attach to streaming buffer memory structure
       //CDeviceStorage &tx_mdst = usrp1.tx_mdst();
       CDeviceStorage tx_mdst;
